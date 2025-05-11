@@ -66,9 +66,9 @@
         <dependency>
             <groupId>local</groupId>
             <artifactId>TLibs</artifactId>
-            <version>0.1.0</version>
+            <version>0.1.1</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/TFMC/DenarEconomy/denareconomy-0.1.0.jar</systemPath>
+            <systemPath>D:/Dokumenter/My Plugins/TFMC/DenarEconomy/denareconomy-0.1.1.jar</systemPath>
         </dependency>
     </dependencies>
 

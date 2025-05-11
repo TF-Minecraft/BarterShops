@@ -18,7 +18,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import io.lumine.mythic.lib.api.item.NBTItem;
+import net.tfminecraft.DenarEconomy.DenarEconomy;
+import net.tfminecraft.DenarEconomy.Data.Account;
 
 public class ShopEvents implements Listener{
 	
@@ -145,7 +146,7 @@ public class ShopEvents implements Listener{
 				p.sendMessage("§cShop Sign has invalid type");
 				return;
 			}
-			shop.setOwner(p.getDisplayName());
+			shop.setOwner(p.getUniqueId().toString());
 			shop.setSignLoc(b.getLocation());
 			e.setCancelled(true);
 			p.sendTitle("Shop Creation §e1/4", "§aRight Click on the storage chest with the redstone", 5, 80, 6);
@@ -180,8 +181,18 @@ public class ShopEvents implements Listener{
 			}
 			if(p.getInventory().firstEmpty() == -1) {
 				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
+				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
+			Account pouch = DenarEconomy.getPlayerManager().get(p).getPouch();
+			if(pouch.getBal() < shop.getPrice()){
+				p.sendMessage("§cCannot afford this!");
+				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+				return;
+			}
+			Account bank = DenarEconomy.getPlayerManager().get(shop.getOwner()).getBank();
+			pouch.change(shop.getPrice()*-1);
+			DenarEconomy.getMoneyManager().addMoneyToAccount(shop.getOwner(), shop.getPrice(), true, true, bank);
 			ItemStack item = null;
 			for(ItemStack storeItem : storage.getInventory().getStorageContents()) {
 				if(storeItem == null) continue;
@@ -191,7 +202,6 @@ public class ShopEvents implements Listener{
 			}
 			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
 			exchangeItems(storage.getInventory(), p.getInventory(), item, shop.getBarterAmount());
-			
 		}
 		if(shop.getType().equalsIgnoreCase("sell")) {
 			if(storage.getInventory().firstEmpty() == -1) {
@@ -200,6 +210,12 @@ public class ShopEvents implements Listener{
 			}
 			if(p.getInventory().firstEmpty() == -1) {
 				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
+				return;
+			}
+			Account bank = DenarEconomy.getPlayerManager().get(shop.getOwner()).getBank();
+			if(bank.getBal() < shop.getPrice()){
+				p.sendMessage("§cThe shop owner lacks money!");
+				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
 			ItemStack item = null;
