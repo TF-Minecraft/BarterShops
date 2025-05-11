@@ -9,12 +9,13 @@ import net.Indyuce.mmoitems.manager.ItemManager;
 public class ShopSign {
 	public Location signLoc;
 	public Location storageLoc;
-	public Location bankLoc;
 	public Integer barterAmount;
 	public Integer price;
 	public String owner;
 	public String paymentitem;
 	public String type;
+
+	//This was before i knew about constructors, i am so sorry...
 	
 	//Setters
 	public void setSignLoc(Location loc) {
@@ -22,9 +23,6 @@ public class ShopSign {
 	}
 	public void setStorageLoc(Location loc) {
 		this.storageLoc = loc;
-	}
-	public void setBankLoc(Location loc) {
-		this.bankLoc = loc;
 	}
 	public void setBarterAmount(Integer i) {
 		this.barterAmount = i;
@@ -48,9 +46,6 @@ public class ShopSign {
 	}
 	public Location getStorageLoc() {
 		return this.storageLoc;
-	}
-	public Location getBankLoc() {
-		return this.bankLoc;
 	}
 	public Integer getBarterAmount() {
 		return this.barterAmount;

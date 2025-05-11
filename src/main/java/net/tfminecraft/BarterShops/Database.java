@@ -31,11 +31,9 @@ public class Database {
     				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), (Double) json.get("sign xPos"),(Double) json.get("sign yPos"),(Double) json.get("sign zPos"));
     				if(!loc.equals(fileLoc)) continue;
     				Location storageLoc = new Location(Bukkit.getServer().getWorld((String) json.get("storage world")), (Double) json.get("storage xPos"),(Double) json.get("storage yPos"),(Double) json.get("storage zPos"));
-    				Location bankLoc = new Location(Bukkit.getServer().getWorld((String) json.get("bank world")), (Double) json.get("bank xPos"),(Double) json.get("bank yPos"),(Double) json.get("bank zPos"));
     				ShopSign shop = new ShopSign();
     				shop.setSignLoc(fileLoc);
     				shop.setStorageLoc(storageLoc);
-    				shop.setBankLoc(bankLoc);
     				shop.setBarterAmount((int) Math.round((Double) json.get("barter amount")));
     				shop.setPrice((int) Math.round((Double) json.get("price")));
     				shop.setOwner((String) json.get("owner"));
@@ -110,11 +108,6 @@ public class Database {
             	defaults.put("storage xPos", shop.getStorageLoc().getX());
             	defaults.put("storage yPos", shop.getStorageLoc().getY());
             	defaults.put("storage zPos", shop.getStorageLoc().getZ());
-            	
-            	defaults.put("bank world", shop.getBankLoc().getWorld().toString().replace("CraftWorld{name=", "").replace("}", ""));
-            	defaults.put("bank xPos", shop.getBankLoc().getX());
-            	defaults.put("bank yPos", shop.getBankLoc().getY());
-            	defaults.put("bank zPos", shop.getBankLoc().getZ());
             	
             	defaults.put("barter amount", shop.getBarterAmount());
             	defaults.put("price", shop.getPrice());
