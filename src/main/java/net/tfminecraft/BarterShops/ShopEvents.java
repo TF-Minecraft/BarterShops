@@ -235,6 +235,9 @@ public class ShopEvents implements Listener{
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
+			Account pouch = DenarEconomy.getPlayerManager().get(p).getPouch();
+			bank.change(shop.getPrice()*-1);
+			DenarEconomy.getMoneyManager().addMoneyToAccount(p.getUniqueId().toString(), shop.getPrice(), true, true, pouch);
 			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
 			exchangeItems(p.getInventory(), storage.getInventory(), item, shop.getBarterAmount());
 		}
