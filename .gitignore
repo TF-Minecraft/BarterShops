@@ -1,5 +1,5 @@
 # Ignore Maven target directory
-target/
+/target
 
 # Ignore Eclipse/IntelliJ IDEA/NetBeans project files
 *.iml
