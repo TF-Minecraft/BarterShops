@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="maven-antrun-" default="main">
+  <target name="main">
+    <copy file="D:\Dokumenter\My Plugins\VSCode Workspace\bartershops\target/bartershops-2.1.jar" tofile="D:\Dokumenter\My Plugins\TFMC\BarterShops\bartershops-2.1.jar" />
+  </target>
+</project>

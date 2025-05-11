@@ -1,0 +1,7 @@
+main: net.tfminecraft.BarterShops.ShopMain
+api-version: 1.20
+name: BarterShops
+version: ${project.version}
+author: Drefvelin
+
+depend: [MMOItems, MythicLib]
