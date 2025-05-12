@@ -23,6 +23,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 import net.tfminecraft.DenarEconomy.DenarEconomy;
 import net.tfminecraft.DenarEconomy.Data.Account;
+import net.tfminecraft.DenarEconomy.Enum.Accounts;
 
 public class ShopEvents implements Listener{
 	
@@ -194,7 +195,7 @@ public class ShopEvents implements Listener{
 				return;
 			}
 			pouch.change(shop.getPrice()*-1);
-			DenarEconomy.getMoneyManager().addMoneyToBank(shop.getOwner(), shop.getPrice(), true, true);
+			DenarEconomy.getMoneyManager().addMoneyToAccount(shop.getOwner(), shop.getPrice(), true, true, Accounts.BANK);
 			ItemStack item = null;
 			for(ItemStack storeItem : storage.getInventory().getStorageContents()) {
 				if(storeItem == null) continue;
@@ -214,7 +215,7 @@ public class ShopEvents implements Listener{
 				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
 				return;
 			}
-			if(DenarEconomy.getPlayerManager().getBankBal(shop.getOwner()) < shop.getPrice()){
+			if(DenarEconomy.getPlayerManager().get(UUID.fromString(shop.getOwner())).getBank().getBal() < shop.getPrice()){
 				p.sendMessage("§cThe shop owner lacks money!");
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
@@ -237,8 +238,8 @@ public class ShopEvents implements Listener{
 				return;
 			}
 			Account pouch = DenarEconomy.getPlayerManager().get(p).getPouch();
-			DenarEconomy.getMoneyManager().addMoneyToBank(shop.getOwner(), shop.getPrice()*-1, true, true);
-			DenarEconomy.getMoneyManager().addMoneyToAccount(p.getUniqueId().toString(), shop.getPrice(), true, true, pouch);
+			DenarEconomy.getMoneyManager().changeBal(shop.getOwner(), shop.getPrice()*-1, Accounts.BANK);
+			DenarEconomy.getMoneyManager().addMoney(p, shop.getPrice(), false, true);
 			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
 			exchangeItems(p.getInventory(), storage.getInventory(), item, shop.getBarterAmount());
 		}
