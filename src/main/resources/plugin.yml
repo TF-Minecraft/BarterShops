@@ -5,3 +5,4 @@ version: ${project.version}
 author: Drefvelin
 
 depend: [MMOItems, MythicLib]
+softdepend: [SimpleFactions]

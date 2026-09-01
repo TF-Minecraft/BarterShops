@@ -24,6 +24,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import net.tfminecraft.DenarEconomy.DenarEconomy;
 import net.tfminecraft.DenarEconomy.Data.Account;
 import net.tfminecraft.DenarEconomy.Enum.Accounts;
+import net.tfminecraft.BarterShops.sf.ShopEmbargo;
 
 public class ShopEvents implements Listener{
 	
@@ -170,6 +171,11 @@ public class ShopEvents implements Listener{
 		ItemStack hand = p.getInventory().getItemInMainHand();
 		if(hand.getType().equals(Material.REDSTONE)) return;
 		ShopSign shop = db.getShopFromLoc(b.getLocation());
+		if(ShopEmbargo.blocked(p, shop)) {
+			p.sendMessage("§cYou cannot use this shop: your nation is under embargo.");
+			p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+			return;
+		}
 		if(!shop.getStorageLoc().getBlock().getType().equals(Material.CHEST)) {
 			p.sendMessage("§cShop missing a storage chest");
 			p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
