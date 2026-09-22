@@ -1,4 +1,4 @@
-package net.tfminecraft.BarterShops.sf;
+package net.tfminecraft.bartershops.sf;
 
 import java.util.UUID;
 
@@ -7,11 +7,11 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-import me.Plugins.SimpleFactions.Managers.FactionManager;
-import me.Plugins.SimpleFactions.Managers.RelationManager;
-import me.Plugins.SimpleFactions.Objects.Faction;
-import net.tfminecraft.BarterShops.ShopMain;
-import net.tfminecraft.BarterShops.ShopSign;
+import net.tfminecraft.simplefactions.managers.FactionManager;
+import net.tfminecraft.simplefactions.managers.RelationManager;
+import net.tfminecraft.simplefactions.objects.Faction;
+import net.tfminecraft.bartershops.ShopMain;
+import net.tfminecraft.bartershops.ShopSign;
 
 /**
  * SimpleFactions trade embargo. Isolated so shop events do not import SF types.

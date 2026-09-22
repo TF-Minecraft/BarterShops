@@ -1,4 +1,4 @@
-package net.tfminecraft.BarterShops;
+package net.tfminecraft.bartershops;
 
 import java.util.HashMap;
 import java.util.UUID;
@@ -21,10 +21,10 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import net.tfminecraft.DenarEconomy.DenarEconomy;
-import net.tfminecraft.DenarEconomy.Data.Account;
-import net.tfminecraft.DenarEconomy.Enum.Accounts;
-import net.tfminecraft.BarterShops.sf.ShopEmbargo;
+import net.tfminecraft.denareconomy.DenarEconomy;
+import net.tfminecraft.denareconomy.data.Account;
+import net.tfminecraft.denareconomy.enums.Accounts;
+import net.tfminecraft.bartershops.sf.ShopEmbargo;
 
 public class ShopEvents implements Listener{
 	

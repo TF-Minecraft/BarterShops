@@ -1,4 +1,4 @@
-package net.tfminecraft.BarterShops;
+package net.tfminecraft.bartershops;
 
 import java.io.File;
 import java.io.FileInputStream;

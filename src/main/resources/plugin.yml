@@ -1,4 +1,4 @@
-main: net.tfminecraft.BarterShops.ShopMain
+main: net.tfminecraft.bartershops.ShopMain
 api-version: '1.21.10'
 name: BarterShops
 version: ${project.version}
