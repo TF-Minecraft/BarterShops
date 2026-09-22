@@ -12,7 +12,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <denareconomy.version>0.2.0</denareconomy.version>
-        <simplefactions.version>3.0.0</simplefactions.version>
+        <simplefactions.version>3.0.1</simplefactions.version>
     </properties>
 
     <dependencies>
