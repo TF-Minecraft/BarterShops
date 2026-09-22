@@ -6,7 +6,7 @@
 
     <groupId>net.tfminecraft</groupId>
     <artifactId>bartershops</artifactId>
-    <version>2.1</version>
+    <version>main-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
