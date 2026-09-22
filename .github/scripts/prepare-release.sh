@@ -9,4 +9,4 @@ curl --fail --location --silent --show-error --retry 3 -H "Authorization: Bearer
 curl --fail --location --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github.raw+json" "https://api.github.com/repos/TF-Minecraft/ServerAssets/contents/jars/660ff2a6ec86/MythicLib-1.7.jar?ref=$ref" > "libs/MythicLib-1.7.jar"
 curl --fail --location --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github.raw+json" "https://api.github.com/repos/TF-Minecraft/ServerAssets/contents/jars/1edf7fcea79a/json-20220320.jar?ref=$ref" > "libs/json-20220320.jar"
 curl --fail --location --silent --show-error --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github.raw+json" "https://api.github.com/repos/TF-Minecraft/ServerAssets/contents/jars/2d9484f4c649/json-simple-1.1.jar?ref=$ref" > "libs/json-simple-1.1.jar"
-sha256sum --check .github/dependencies.sha256
+bash .github/scripts/install-local-dependencies.sh "$@"

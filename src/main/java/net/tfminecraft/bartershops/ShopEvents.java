@@ -74,6 +74,8 @@ public class ShopEvents implements Listener{
 			}
 			ShopMain.plugin.getServer().getScheduler().runTask(ShopMain.plugin, new Runnable()
 			{
+			    // Keep the existing legacy text representation, formatting, and exact-string comparisons.
+			    @SuppressWarnings("deprecation")
 			    @Override
 			    public void run()
 			    {
@@ -91,6 +93,8 @@ public class ShopEvents implements Listener{
 		}
 	}
 	
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	@EventHandler
 	public void createShopEvent(PlayerInteractEvent e) {
 		if(!e.getAction().equals(Action.RIGHT_CLICK_BLOCK)) return;
