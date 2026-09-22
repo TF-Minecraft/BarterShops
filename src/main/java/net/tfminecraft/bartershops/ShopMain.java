@@ -1,4 +1,4 @@
-package net.tfminecraft.BarterShops;
+package net.tfminecraft.bartershops;
 
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
