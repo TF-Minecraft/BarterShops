@@ -1,24 +1,23 @@
-# bartershops
+# BarterShops
 
-Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/TF-Minecraft/Docs/blob/main/projects/BarterShops/README.md).
+> Player-run sign shops for TF-Minecraft.
 
-Use that project index for setup, configuration, architecture, integration and testing guides. This repository contains the source and project-specific assets.
+BarterShops turns a sign and a stocked chest into a place to trade. Players can buy goods from a shop or sell matching items back to its owner, with payments handled in denars. It gives market stalls and local businesses a practical role in the world: the stock is in the chest, the price belongs to the owner, and the transaction happens at the sign.
 
-## Shared plugin dependencies
+## Features
 
-Build and release workflows install checksum-verified plugin releases through
-[TLibs' shared installer](https://github.com/TF-Minecraft/TLibs/blob/main/DEPENDENCIES.md).
-CI selects the latest published versions; local builds use the explicit Maven
-version properties. Shared plugins use `provided` scope and remain separate
-server plugins. Each build records exact versions and checksums in
-`.build/plugin-dependencies.json` alongside its JAR.
+- **Buy and sell shops** — support both customers purchasing stock and customers selling goods to a shop.
+- **Chest-backed stock** — move real items between the shop's storage and the customer's inventory.
+- **Owner-set trades** — choose the quantity and price for each transaction through an in-game creation flow.
+- **Denar payments** — connect customer spending and shop-owner bank balances through DenarEconomy.
+- **Diplomatic consequences** — respect trade embargoes between nations when SimpleFactions is available.
 
-From this checkout, with the TLibs repository next to it:
+## Part of the economy
 
-```sh
-python3 ../tlibs/tools/install-plugins.py --pom pom.xml
-```
+BarterShops brings player businesses into the same economy as [DenarEconomy](https://github.com/TF-Minecraft/DenarEconomy) and the diplomacy of [SimpleFactions](https://github.com/TF-Minecraft/SimpleFactions). Stock, available money, and national relationships all affect whether a trade can happen.
 
-Prepare any remaining third-party inputs with `.github/scripts/prepare-release.sh`
-before running Maven. Any source-unavailable inputs remain private and checksum-pinned wherever declared; see the installer
-documentation for authentication and reproducible rebuilds.
+## Documentation
+
+[Project documentation](https://github.com/TF-Minecraft/Docs/blob/main/projects/BarterShops/README.md)
+
+Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/TF-Minecraft/Docs).
