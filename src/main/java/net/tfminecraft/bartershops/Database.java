@@ -163,6 +163,8 @@ public class Database {
            : (defaults.containsKey(key) ? defaults.get(key).toString() : key);
       }
     
+      // Keep the existing legacy text representation, formatting, and exact-string comparisons.
+      @SuppressWarnings("deprecation")
       public String getString(String key, HashMap<String, Object> defaults) {
         return ChatColor.translateAlternateColorCodes('&', getRawData(key, defaults));
       }
