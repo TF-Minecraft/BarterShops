@@ -35,6 +35,8 @@ public class ShopEvents implements Listener{
 	
 	Database db = new Database();
 	
+	// Retain Bukkit chat-event ordering and String message semantics for existing integrations.
+	@SuppressWarnings("deprecation")
 	@EventHandler
 	public void chatEvent(AsyncPlayerChatEvent event) {
 		Player player = event.getPlayer();
@@ -52,6 +54,8 @@ public class ShopEvents implements Listener{
 			}
 			ShopMain.plugin.getServer().getScheduler().runTask(ShopMain.plugin, new Runnable()
 			{
+			    // Keep the existing legacy text representation, formatting, and exact-string comparisons.
+			    @SuppressWarnings("deprecation")
 			    @Override
 			    public void run()
 			    {
@@ -164,6 +168,8 @@ public class ShopEvents implements Listener{
 		}
 	}
 	
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	@EventHandler
 	public void useShop(PlayerInteractEvent e) {
 		if(!e.getAction().equals(Action.RIGHT_CLICK_BLOCK)) return;
