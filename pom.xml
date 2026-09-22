@@ -11,7 +11,6 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <tfmc.simplefactions>D:/Dokumenter/My Plugins/VSCode Workspace/simplefactions/target</tfmc.simplefactions>
     </properties>
 
     <dependencies>
@@ -20,84 +19,80 @@
             <artifactId>api</artifactId>
             <version>5.4</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/api-5.4.jar</systemPath>
+            <systemPath>${project.basedir}/libs/api-5.4.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
-            <artifactId>api</artifactId>
+            <artifactId>gson</artifactId>
             <version>2.10.1</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/gson-2.10.1.jar</systemPath>
+            <systemPath>${project.basedir}/libs/gson-2.10.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>MMOItems</artifactId>
             <version>6.10</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/MMOItems-6.10.jar</systemPath>
+            <systemPath>${project.basedir}/libs/MMOItems-6.10.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>MythicLib</artifactId>
-            <version>1.6.1</version>
+            <version>1.7</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/MythicLib-1.7.jar</systemPath>
+            <systemPath>${project.basedir}/libs/MythicLib-1.7.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>spigot-api</artifactId>
             <version>1.20.2-R0.1-SNAPSHOT</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/spigot-api-1.20.2-R0.1-SNAPSHOT.jar</systemPath>
+            <systemPath>${project.basedir}/libs/spigot-api-1.20.2-R0.1-SNAPSHOT.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>json</artifactId>
             <version>20220320</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/json-20220320.jar</systemPath>
+            <systemPath>${project.basedir}/libs/json-20220320.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>json-simple</artifactId>
             <version>1.1</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/Reference Libs/json-simple-1.1.jar</systemPath>
+            <systemPath>${project.basedir}/libs/json-simple-1.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
-            <artifactId>TLibs</artifactId>
-            <version>0.1.2</version>
+            <artifactId>DenarEconomy</artifactId>
+            <version>0.1.8</version>
             <scope>system</scope>
-            <systemPath>D:/Dokumenter/My Plugins/TFMC/DenarEconomy/denareconomy-0.1.2.jar</systemPath>
+            <systemPath>${project.basedir}/libs/denareconomy-0.1.8.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>simplefactions</artifactId>
             <version>2.8.7</version>
             <scope>system</scope>
-            <systemPath>${tfmc.simplefactions}/simplefactions-2.8.7.jar</systemPath>
+            <systemPath>${project.basedir}/libs/simplefactions-2.8.7.jar</systemPath>
         </dependency>
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes><include>plugin.yml</include></includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes><exclude>plugin.yml</exclude></excludes>
+            </resource>
+        </resources>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>run</goal></goals>
-                        <configuration>
-                            <target>
-                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
-                                    tofile="D:\Dokumenter\My Plugins\TFMC\BarterShops\${project.build.finalName}.jar"/>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 
