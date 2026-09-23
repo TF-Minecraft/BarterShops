@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -19,8 +20,11 @@ import org.json.simple.parser.JSONParser;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.ToNumberPolicy;
 
 public class Database {
+	private static final Gson SHOP_READER = new GsonBuilder()
+        .setObjectToNumberStrategy(ToNumberPolicy.BIG_DECIMAL).create();
 	private final File dataFolder;
 
 	public Database() {
@@ -37,20 +41,20 @@ public class Database {
         File folder = dataFolder;
     	for (final File file : folder.listFiles()) {
             if (!file.isDirectory()) {
-            	try {
-    				json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), (Double) json.get("sign xPos"),(Double) json.get("sign yPos"),(Double) json.get("sign zPos"));
+                try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8")) {
+                    Map<?, ?> shopJson = SHOP_READER.fromJson(reader, Map.class);
+                    Location fileLoc = new Location(Bukkit.getServer().getWorld((String) shopJson.get("sign world")), ((Number) shopJson.get("sign xPos")).doubleValue(),((Number) shopJson.get("sign yPos")).doubleValue(),((Number) shopJson.get("sign zPos")).doubleValue());
     				if(!loc.equals(fileLoc)) continue;
-    				Location storageLoc = new Location(Bukkit.getServer().getWorld((String) json.get("storage world")), (Double) json.get("storage xPos"),(Double) json.get("storage yPos"),(Double) json.get("storage zPos"));
+                    Location storageLoc = new Location(Bukkit.getServer().getWorld((String) shopJson.get("storage world")), ((Number) shopJson.get("storage xPos")).doubleValue(),((Number) shopJson.get("storage yPos")).doubleValue(),((Number) shopJson.get("storage zPos")).doubleValue());
     				ShopSign shop = new ShopSign();
     				shop.setSignLoc(fileLoc);
     				shop.setStorageLoc(storageLoc);
-                    shop.setBarterAmount(readInteger(json.get("barter amount")));
-                    shop.setPrice(readInteger(json.get("price")));
+                    shop.setBarterAmount(readInteger(shopJson.get("barter amount")));
+                    shop.setPrice(readInteger(shopJson.get("price")));
                     if (!shop.hasValidTerms()) return null;
-    				shop.setOwner((String) json.get("owner"));
-    				shop.setPaymentItem((String) json.get("payment item"));
-    				shop.setType((String) json.get("type"));
+                    shop.setOwner((String) shopJson.get("owner"));
+                    shop.setPaymentItem((String) shopJson.get("payment item"));
+                    shop.setType((String) shopJson.get("type"));
     				return shop;
     			} catch (Exception ex) {
     				ex.printStackTrace();
@@ -60,8 +64,8 @@ public class Database {
     	return null;
     }
 
-    // Saved shops use JSON doubles, but rounding or narrowing them can turn invalid
-    // prices/quantities into usable trades. Accept only exact, in-range integers.
+    // Keep saved decimal tokens exact through parsing and integer conversion:
+    // rounding or narrowing can turn invalid prices/quantities into usable trades.
     private static Integer readInteger(Object value) {
         if (!(value instanceof Number)) return null;
         try {

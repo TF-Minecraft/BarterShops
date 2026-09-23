@@ -23,7 +23,9 @@ class DatabaseTest {
         "0.0,-2147483647.0", "1.0,-2147483647.0", "1.0,-2147483648.0",
         "0.0,10.0", "-1.0,10.0", "null,10.0", "1.0,null",
         "1.0,-0.4", "1.5,10.0", "1.0,0.5", "2147483648.0,10.0",
-        "1.0,4294967296.0", "\"1\",10.0"
+        "1.0,4294967296.0", "\"1\",10.0",
+        "1.0000000000000001,10.0", "1.0,1e-400", "1.0,-1e-400",
+        "1.0,2147483647.0000001", "1.0,\"0\""
     })
     void refusesInvalidSavedTermsWithoutDeletingTheShop(String quantity, String price) throws Exception {
         Path file = writeShop(quantity, price);
