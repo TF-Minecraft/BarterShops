@@ -52,6 +52,10 @@ public class ShopEvents implements Listener{
 				player.sendMessage("§cInvalid Format, use numbers only");
 				return;
 			}
+			if(amount <= 0) {
+				player.sendMessage("§cItem quantity must be greater than 0.");
+				return;
+			}
 			ShopMain.plugin.getServer().getScheduler().runTask(ShopMain.plugin, new Runnable()
 			{
 			    // Keep the existing legacy text representation, formatting, and exact-string comparisons.
@@ -74,6 +78,10 @@ public class ShopEvents implements Listener{
 				amount = Integer.parseInt(event.getMessage());
 			} catch(Exception ex){
 				player.sendMessage("§cInvalid Format, use numbers only");
+				return;
+			}
+			if(amount < 0) {
+				player.sendMessage("§cPrice must be 0 or greater.");
 				return;
 			}
 			ShopMain.plugin.getServer().getScheduler().runTask(ShopMain.plugin, new Runnable()
@@ -181,6 +189,10 @@ public class ShopEvents implements Listener{
 		ItemStack hand = p.getInventory().getItemInMainHand();
 		if(hand.getType().equals(Material.REDSTONE)) return;
 		ShopSign shop = db.getShopFromLoc(b.getLocation());
+		if(shop == null || !shop.hasValidTerms()) {
+			p.sendMessage("§cShop has an invalid quantity or price. Contact the shop owner.");
+			return;
+		}
 		if(ShopEmbargo.blocked(p, shop)) {
 			p.sendMessage("§cYou cannot use this shop: your nation is under embargo.");
 			p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
