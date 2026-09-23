@@ -53,6 +53,9 @@ public class ShopSign {
 	public Integer getPrice() {
 		return this.price;
 	}
+	public boolean hasValidTerms() {
+		return barterAmount != null && barterAmount > 0 && price != null && price >= 0;
+	}
 	public String getOwner() {
 		return this.owner;
 	}

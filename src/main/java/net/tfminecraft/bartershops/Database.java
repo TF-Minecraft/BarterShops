@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -20,10 +21,20 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 public class Database {
+	private final File dataFolder;
+
+	public Database() {
+		this(new File("plugins/BarterShops/Data"));
+	}
+
+	Database(File dataFolder) {
+		this.dataFolder = dataFolder;
+	}
+
 	private JSONObject json; // org.json.simple
     JSONParser parser = new JSONParser();
 	public ShopSign getShopFromLoc(Location loc) {
-    	File folder = new File("plugins/BarterShops/Data");
+        File folder = dataFolder;
     	for (final File file : folder.listFiles()) {
             if (!file.isDirectory()) {
             	try {
@@ -34,8 +45,9 @@ public class Database {
     				ShopSign shop = new ShopSign();
     				shop.setSignLoc(fileLoc);
     				shop.setStorageLoc(storageLoc);
-    				shop.setBarterAmount((int) Math.round((Double) json.get("barter amount")));
-    				shop.setPrice((int) Math.round((Double) json.get("price")));
+                    shop.setBarterAmount(readInteger(json.get("barter amount")));
+                    shop.setPrice(readInteger(json.get("price")));
+                    if (!shop.hasValidTerms()) return null;
     				shop.setOwner((String) json.get("owner"));
     				shop.setPaymentItem((String) json.get("payment item"));
     				shop.setType((String) json.get("type"));
@@ -47,9 +59,20 @@ public class Database {
         }
     	return null;
     }
+
+    // Saved shops use JSON doubles, but rounding or narrowing them can turn invalid
+    // prices/quantities into usable trades. Accept only exact, in-range integers.
+    private static Integer readInteger(Object value) {
+        if (!(value instanceof Number)) return null;
+        try {
+            return new BigDecimal(value.toString()).intValueExact();
+        } catch (NumberFormatException | ArithmeticException ex) {
+            return null;
+        }
+    }
 	
 	public Boolean shopExistsFromLoc(Location loc) {
-    	File folder = new File("plugins/BarterShops/Data");
+        File folder = dataFolder;
     	for (final File file : folder.listFiles()) {
             if (!file.isDirectory()) {
             	try {
@@ -66,7 +89,7 @@ public class Database {
     }
 	
 	public void deleteFile(Location loc) {
-    	File folder = new File("plugins/BarterShops/Data");
+        File folder = dataFolder;
     	for (final File file : folder.listFiles()) {
             if (!file.isDirectory()) {
             	try {
@@ -85,11 +108,11 @@ public class Database {
     		try {
     			UUID uuid = UUID. randomUUID();
     			String uuidAsString = uuid. toString();
-    			File file = new File("plugins/BarterShops/Data",uuidAsString+".json");
+                File file = new File(dataFolder,uuidAsString+".json");
     			while(file.exists() == true) {
     				UUID newuuid = UUID. randomUUID();
         			uuidAsString = newuuid.toString();
-        			file = new File("plugins/BarterShops/Data",uuidAsString+".json");
+                file = new File(dataFolder,uuidAsString+".json");
     			}
     			file.createNewFile();
             	PrintWriter pw = new PrintWriter(file, "UTF-8");
