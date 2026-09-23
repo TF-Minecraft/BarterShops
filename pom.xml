@@ -19,12 +19,6 @@
     <dependencies>
         <dependency>
             <groupId>local</groupId>
-            <artifactId>api</artifactId>
-            <version>5.4-tfmc-086e3971ea63</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>local</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1-tfmc-4241c14a7727</version>
             <scope>provided</scope>
@@ -45,12 +39,6 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.10-R0.1-SNAPSHOT</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>local</groupId>
-            <artifactId>json</artifactId>
-            <version>20220320-tfmc-1edf7fcea79a</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
