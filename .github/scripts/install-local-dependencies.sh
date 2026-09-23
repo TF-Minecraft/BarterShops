@@ -5,9 +5,6 @@ set -euo pipefail
 sha256sum --check .github/dependencies.sha256
 
 mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-    -Dfile="libs/api-5.4.jar" -DgroupId="local" -DartifactId="api" \
-    -Dversion="5.4-tfmc-086e3971ea63" -Dpackaging=jar -DgeneratePom=true "$@"
-mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
     -Dfile="libs/gson-2.10.1.jar" -DgroupId="local" -DartifactId="gson" \
     -Dversion="2.10.1-tfmc-4241c14a7727" -Dpackaging=jar -DgeneratePom=true "$@"
 mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
@@ -16,9 +13,6 @@ mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.
 mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
     -Dfile="libs/MythicLib-1.7.jar" -DgroupId="local" -DartifactId="MythicLib" \
     -Dversion="1.7-tfmc-660ff2a6ec86" -Dpackaging=jar -DgeneratePom=true "$@"
-mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-    -Dfile="libs/json-20220320.jar" -DgroupId="local" -DartifactId="json" \
-    -Dversion="20220320-tfmc-1edf7fcea79a" -Dpackaging=jar -DgeneratePom=true "$@"
 mvn -B --no-transfer-progress org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
     -Dfile="libs/json-simple-1.1.jar" -DgroupId="local" -DartifactId="json-simple" \
     -Dversion="1.1-tfmc-2d9484f4c649" -Dpackaging=jar -DgeneratePom=true "$@"
