@@ -213,7 +213,8 @@ public class ShopEvents implements Listener{
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
-			if(p.getInventory().firstEmpty() == -1) {
+			// Items that do not fit would be lost after payment, so the whole order must fit.
+			if(hasRoomFor(p.getInventory(), item, shop.getBarterAmount()) == false) {
 				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
@@ -230,7 +231,8 @@ public class ShopEvents implements Listener{
 			exchangeItems(storage.getInventory(), p.getInventory(), item, shop.getBarterAmount());
 		}
 		if(shop.getType().equalsIgnoreCase("sell")) {
-			if(storage.getInventory().firstEmpty() == -1) {
+			ItemStack item = firstItem(storage.getInventory());
+			if(item != null && hasRoomFor(storage.getInventory(), item, shop.getBarterAmount()) == false) {
 				p.sendMessage(ChatColor.RED + "Shop Storage is full!");	
 				return;
 			}
@@ -243,7 +245,6 @@ public class ShopEvents implements Listener{
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
-			ItemStack item = firstItem(storage.getInventory());
 			if(item == null) {
 				p.sendMessage("§cShop has no item set for selling");
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
@@ -286,6 +287,21 @@ public class ShopEvents implements Listener{
 			return new ItemStack(item);
 		}
 		return null;
+	}
+
+	public boolean hasRoomFor(Inventory i, ItemStack match, Integer amount) {
+		int max = Math.min(match.getMaxStackSize(), i.getMaxStackSize());
+		long room = 0;
+		for(ItemStack item : i.getStorageContents()) {
+			if(item == null || item.getType().equals(Material.AIR)) {
+				room += max;
+				continue;
+			}
+			if(match.isSimilar(item)) {
+				room += Math.max(0, max - item.getAmount());
+			}
+		}
+		return room >= amount;
 	}
 
 	public Boolean hasEnoughItems(Inventory i, ItemStack match, Integer amount) {
