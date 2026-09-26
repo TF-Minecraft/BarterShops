@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,8 +37,7 @@ public class Database {
 	private JSONObject json; // org.json.simple
     JSONParser parser = new JSONParser();
 	public ShopSign getShopFromLoc(Location loc) {
-        File folder = dataFolder;
-    	for (final File file : folder.listFiles()) {
+    	for (final File file : shopFiles()) {
             if (!file.isDirectory()) {
                 try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8")) {
                     Map<?, ?> shopJson = SHOP_READER.fromJson(reader, Map.class);
@@ -64,6 +62,12 @@ public class Database {
     	return null;
     }
 
+    // The data folder only exists once a shop has been saved.
+    private File[] shopFiles() {
+        File[] files = dataFolder.listFiles();
+        return files == null ? new File[0] : files;
+    }
+
     // Keep saved decimal tokens exact through parsing and integer conversion:
     // rounding or narrowing can turn invalid prices/quantities into usable trades.
     private static Integer readInteger(Object value) {
@@ -76,8 +80,7 @@ public class Database {
     }
 	
 	public Boolean shopExistsFromLoc(Location loc) {
-        File folder = dataFolder;
-    	for (final File file : folder.listFiles()) {
+    	for (final File file : shopFiles()) {
             if (!file.isDirectory()) {
             	try {
     				json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
@@ -93,8 +96,7 @@ public class Database {
     }
 	
 	public void deleteFile(Location loc) {
-        File folder = dataFolder;
-    	for (final File file : folder.listFiles()) {
+    	for (final File file : shopFiles()) {
             if (!file.isDirectory()) {
             	try {
     				json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
@@ -110,22 +112,8 @@ public class Database {
 	
 	public void saveShop(ShopSign shop) {
     		try {
-    			UUID uuid = UUID. randomUUID();
-    			String uuidAsString = uuid. toString();
-                File file = new File(dataFolder,uuidAsString+".json");
-    			while(file.exists() == true) {
-    				UUID newuuid = UUID. randomUUID();
-        			uuidAsString = newuuid.toString();
-                file = new File(dataFolder,uuidAsString+".json");
-    			}
-    			file.createNewFile();
-            	PrintWriter pw = new PrintWriter(file, "UTF-8");
-            	pw.print("{");
-            	pw.print("}");
-            	pw.flush();
-            	pw.close();
+                // Collect every value before creating the file, so a bad shop leaves no empty file behind.
                 HashMap<String, Object> defaults = new HashMap<String, Object>();
-            	json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
             	defaults.put("sign world", shop.getSignLoc().getWorld().toString().replace("CraftWorld{name=", "").replace("}", ""));
             	defaults.put("sign xPos", shop.getSignLoc().getX());
             	defaults.put("sign yPos", shop.getSignLoc().getY());
@@ -141,7 +129,18 @@ public class Database {
             	defaults.put("payment item", shop.getPaymentItemString());
             	defaults.put("owner", shop.getOwner());
             	defaults.put("type", shop.getType());
-            	save(file, defaults);
+            	dataFolder.mkdirs();
+    			UUID uuid = UUID. randomUUID();
+    			String uuidAsString = uuid. toString();
+                File file = new File(dataFolder,uuidAsString+".json");
+    			while(file.exists() == true) {
+    				UUID newuuid = UUID. randomUUID();
+        			uuidAsString = newuuid.toString();
+                file = new File(dataFolder,uuidAsString+".json");
+    			}
+            	// A new shop has no stored values, so save() writes the defaults above.
+            	json = new JSONObject();
+            	if(!save(file, defaults)) file.delete();
             } catch (Throwable ex) {
 				ex.printStackTrace();
             }

@@ -261,6 +261,7 @@ class ShopEventsTest {
         when(player.getUniqueId()).thenReturn(CUSTOMER);
         when(player.getLocation()).thenReturn(playerLocation);
         holding(Material.REDSTONE);
+        stock(inventory, new ItemStack[36]);
         signLocation = new Location(world, 0, 64, 0);
         block = mock(Block.class);
         sign = mock(Sign.class);
@@ -635,14 +636,28 @@ class ShopEventsTest {
     }
 
     @Test
-    void buyingNeedsInventorySpace() {
+    void buyingNeedsRoomForTheWholeOrder() {
+        // Previously one free slot was enough, and whatever did not fit was lost after payment.
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 5));
-        when(inventory.firstEmpty()).thenReturn(-1);
+        stock(inventory, new Stack(Material.DIRT, 62), new Stack(Material.STONE, 64));
         when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
         assertRefused(ChatColor.RED + "Your inventory is full!");
+    }
+
+    @Test
+    void buyingCanTopUpPartStacks() {
+        stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 5));
+        stock(inventory, new Stack(Material.DIRT, 59), new Stack(Material.STONE, 64));
+        List<ItemStack> bought = received(inventory);
+        when(pouch.getBal()).thenReturn(10.0);
+
+        events.useShop(click(block));
+
+        verify(pouch).change(-10.0);
+        assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
     }
 
     @Test
@@ -680,12 +695,12 @@ class ShopEventsTest {
     }
 
     @Test
-    void sellingNeedsStorageSpace() {
-        Inventory storage = storage(tradingShop("sell"));
-        when(storage.firstEmpty()).thenReturn(-1);
-        PlayerInteractEvent event = click(block);
+    void sellingNeedsRoomInTheChestForTheWholeOrder() {
+        stock(storage(tradingShop("sell")), new Stack(Material.DIRT, 62), new Stack(Material.STONE, 64));
+        stock(inventory, new Stack(Material.DIRT, 5));
+        when(bank.getBal()).thenReturn(10.0);
 
-        events.useShop(event);
+        events.useShop(click(block));
 
         verify(player).sendMessage(ChatColor.RED + "Shop Storage is full!");
         denar.verifyNoInteractions();
@@ -783,6 +798,22 @@ class ShopEventsTest {
             new Stack(Material.STONE, 9), new Stack(Material.DIRT, 2));
         assertTrue(events.hasEnoughItems(inventory, new Stack(Material.DIRT, 1), 5));
         assertFalse(events.hasEnoughItems(inventory, new Stack(Material.DIRT, 1), 6));
+    }
+
+    @Test
+    void roomCountsEmptySlotsAndSpaceInMatchingStacks() {
+        stock(inventory, null, new Stack(Material.AIR, 0), new Stack(Material.DIRT, 60),
+            new Stack(Material.STONE, 1), new Stack(Material.DIRT, 70));
+        assertTrue(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 132));
+        assertFalse(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 133));
+    }
+
+    @Test
+    void roomRespectsTheInventoryStackLimit() {
+        stock(inventory, null, null);
+        when(inventory.getMaxStackSize()).thenReturn(16);
+        assertTrue(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 32));
+        assertFalse(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 33));
     }
 
     @Test
@@ -886,6 +917,7 @@ class ShopEventsTest {
     /** Backs the inventory with the returned array, which slot updates write through to. */
     private static ItemStack[] stock(Inventory inventory, ItemStack... contents) {
         when(inventory.getStorageContents()).thenReturn(contents);
+        when(inventory.getMaxStackSize()).thenReturn(99);
         doAnswer(invocation -> {
             contents[invocation.<Integer>getArgument(0)] = invocation.getArgument(1);
             return null;
@@ -956,6 +988,11 @@ class ShopEventsTest {
         @Override
         public void setAmount(int amount) {
             this.amount = amount;
+        }
+
+        @Override
+        public int getMaxStackSize() {
+            return 64;
         }
 
         @Override

@@ -192,10 +192,39 @@ class DatabaseTest {
     }
 
     @Test
-    void savingAShopWithoutASignDoesNotThrow() {
+    void savingAShopWithoutASignLeavesNoFile() {
         ShopSign shop = shop();
         shop.setSignLoc(null);
         assertDoesNotThrow(() -> new Database(directory.toFile()).saveShop(shop));
+        assertEquals(0, directory.toFile().listFiles().length);
+    }
+
+    @Test
+    void failedWritesLeaveNoFile() {
+        Database database = spy(new Database(directory.toFile()));
+        doAnswer(invocation -> {
+            Files.writeString(invocation.<File>getArgument(0).toPath(), "{\"sign world\"");
+            return false;
+        }).when(database).save(any(), any());
+
+        database.saveShop(shop());
+
+        assertEquals(0, directory.toFile().listFiles().length);
+    }
+
+    @Test
+    void missingDataFolderHoldsNoShopsUntilTheFirstSave() {
+        File folder = directory.resolve("BarterShops/Data").toFile();
+        Database database = new Database(folder);
+        ShopSign shop = shop();
+
+        assertNull(database.getShopFromLoc(shop.getSignLoc()));
+        assertFalse(database.shopExistsFromLoc(shop.getSignLoc()));
+        assertDoesNotThrow(() -> database.deleteFile(shop.getSignLoc()));
+        database.saveShop(shop);
+
+        assertTrue(folder.isDirectory());
+        assertTrue(database.shopExistsFromLoc(shop.getSignLoc()));
     }
 
     @Test
