@@ -119,18 +119,23 @@ class DatabaseTest {
     }
 
     @Test
-    void existenceChecksAndDeletionNeedDecimalSignCoordinates() throws Exception {
-        // json-simple reads whole numbers as Long, which the Double casts reject.
+    void wholeNumberCoordinatesWorkForEveryLookup() throws Exception {
+        // json-simple reads whole numbers as Long; existence checks and deletion used to reject them.
         Files.writeString(directory.resolve("shop.json"), """
-            {"sign world": "world", "sign xPos": 1, "sign yPos": 2, "sign zPos": 3}
-            """);
+            {
+              "sign world": "world", "sign xPos": 1, "sign yPos": 2, "sign zPos": 3,
+              "storage world": "world", "storage xPos": 4, "storage yPos": 2, "storage zPos": 3,
+              "barter amount": 1, "price": 10, "owner": "%s", "type": "buy"
+            }
+            """.formatted(OWNER));
         Location sign = new Location(world, 1, 2, 3);
         Database database = new Database(directory.toFile());
 
-        assertFalse(database.shopExistsFromLoc(sign));
+        assertNotNull(database.getShopFromLoc(sign));
+        assertTrue(database.shopExistsFromLoc(sign));
         database.deleteFile(sign);
 
-        assertTrue(Files.exists(directory.resolve("shop.json")));
+        assertFalse(Files.exists(directory.resolve("shop.json")));
     }
 
     @Test
