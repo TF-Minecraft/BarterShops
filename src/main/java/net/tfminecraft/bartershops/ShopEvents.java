@@ -297,8 +297,7 @@ public class ShopEvents implements Listener{
 				room += max;
 				continue;
 			}
-			match.setAmount(item.getAmount());
-			if(match.equals(item)) {
+			if(match.isSimilar(item)) {
 				room += Math.max(0, max - item.getAmount());
 			}
 		}

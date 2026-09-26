@@ -804,8 +804,10 @@ class ShopEventsTest {
     void roomCountsEmptySlotsAndSpaceInMatchingStacks() {
         stock(inventory, null, new Stack(Material.AIR, 0), new Stack(Material.DIRT, 60),
             new Stack(Material.STONE, 1), new Stack(Material.DIRT, 70));
-        assertTrue(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 132));
-        assertFalse(events.hasRoomFor(inventory, new Stack(Material.DIRT, 1), 133));
+        ItemStack dirt = new Stack(Material.DIRT, 1);
+        assertTrue(events.hasRoomFor(inventory, dirt, 132));
+        assertFalse(events.hasRoomFor(inventory, dirt, 133));
+        assertEquals(1, dirt.getAmount());
     }
 
     @Test
@@ -964,7 +966,7 @@ class ShopEventsTest {
 
     /**
      * Paper's ItemStack forwards to a server-side stack. This stands in for that stack, comparing
-     * type and amount the way Bukkit's equality does for plain items.
+     * type (and, for equality, amount) the way Bukkit does for plain items.
      */
     private static final class Stack extends ItemStack {
         private final Material type;
@@ -998,6 +1000,11 @@ class ShopEventsTest {
         @Override
         public ItemStack clone() {
             return new Stack(type, amount);
+        }
+
+        @Override
+        public boolean isSimilar(ItemStack stack) {
+            return stack != null && stack.getType() == type;
         }
 
         @Override

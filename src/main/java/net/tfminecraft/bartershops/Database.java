@@ -172,10 +172,9 @@ public class Database {
        Gson g = new GsonBuilder().setPrettyPrinting().create();
        String prettyJsonString = g.toJson(treeMap);
       
-        FileWriter fw = new FileWriter(file);
-        fw.write(prettyJsonString);
-        fw.flush();
-        fw.close();
+        try (FileWriter fw = new FileWriter(file)) {
+          fw.write(prettyJsonString);
+        }
       
         return true;
       } catch (Exception ex) {
