@@ -206,7 +206,9 @@ public class ShopEvents implements Listener{
 		Chest storage = (Chest) shop.getStorageLoc().getBlock().getState();
 		
 		if(shop.getType().equalsIgnoreCase("buy")) {
-			if(storageHasEnoughItems(storage.getInventory(), shop.getBarterAmount()) == false) {
+			// Only stacks of the item being sold count as stock; other items in the chest are never handed over.
+			ItemStack item = firstItem(storage.getInventory());
+			if(item == null || hasEnoughItems(storage.getInventory(), item, shop.getBarterAmount()) == false) {
 				p.sendMessage("§cShop out of stock");
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
@@ -224,13 +226,6 @@ public class ShopEvents implements Listener{
 			}
 			pouch.change(shop.getPrice()*-1);
 			DenarEconomy.getMoneyManager().addMoneyToAccount(shop.getOwner(), shop.getPrice(), true, true, Accounts.BANK);
-			ItemStack item = null;
-			for(ItemStack storeItem : storage.getInventory().getStorageContents()) {
-				if(storeItem == null) continue;
-				if(storeItem.getType().equals(Material.AIR)) continue;
-				item = new ItemStack(storeItem);
-				break;
-			}
 			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
 			exchangeItems(storage.getInventory(), p.getInventory(), item, shop.getBarterAmount());
 		}
@@ -248,19 +243,13 @@ public class ShopEvents implements Listener{
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
-			ItemStack item = null;
-			for(ItemStack storeItem : storage.getInventory().getStorageContents()) {
-				if(storeItem == null) continue;
-				if(storeItem.getType().equals(Material.AIR)) continue;
-				item = new ItemStack(storeItem);
-				break;
-			}
+			ItemStack item = firstItem(storage.getInventory());
 			if(item == null) {
 				p.sendMessage("§cShop has no item set for selling");
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
 			}
-			if(playerHasEnoughItems(p.getInventory(), item, shop.getBarterAmount()) == false) {
+			if(hasEnoughItems(p.getInventory(), item, shop.getBarterAmount()) == false) {
 				p.sendMessage("§cYou dont have enough to sell");
 				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
 				return;
@@ -290,7 +279,16 @@ public class ShopEvents implements Listener{
 			}.runTaskLater(ShopMain.plugin,5L);
 		}
 	}
-	public Boolean playerHasEnoughItems(Inventory i, ItemStack match, Integer amount) {
+	private ItemStack firstItem(Inventory i) {
+		for(ItemStack item : i.getStorageContents()) {
+			if(item == null) continue;
+			if(item.getType().equals(Material.AIR)) continue;
+			return new ItemStack(item);
+		}
+		return null;
+	}
+
+	public Boolean hasEnoughItems(Inventory i, ItemStack match, Integer amount) {
 		Integer counter = 0;
 		for(ItemStack item : i.getStorageContents()) {
 			if(item == null) continue;
@@ -299,19 +297,6 @@ public class ShopEvents implements Listener{
 			if(match.equals(item)) {
 				counter = counter + item.getAmount();
 			}
-		}
-		if(counter >= amount) {
-			return true;
-		}
-		return false;
-	}
-	
-	public Boolean storageHasEnoughItems(Inventory i, Integer amount) {
-		Integer counter = 0;
-		for(ItemStack item : i.getStorageContents()) {
-			if(item == null) continue;
-			if(item.getType().equals(Material.AIR)) continue;
-			counter = counter + item.getAmount();
 		}
 		if(counter >= amount) {
 			return true;
