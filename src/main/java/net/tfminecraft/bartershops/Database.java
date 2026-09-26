@@ -81,7 +81,7 @@ public class Database {
             if (!file.isDirectory()) {
             	try {
     				json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), (Double) json.get("sign xPos"),(Double) json.get("sign yPos"),(Double) json.get("sign zPos"));
+    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), ((Number) json.get("sign xPos")).doubleValue(),((Number) json.get("sign yPos")).doubleValue(),((Number) json.get("sign zPos")).doubleValue());
     				if(!loc.equals(fileLoc)) continue;
     				return true;
     			} catch (Exception ex) {
@@ -98,7 +98,7 @@ public class Database {
             if (!file.isDirectory()) {
             	try {
     				json = (JSONObject) parser.parse(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), (Double) json.get("sign xPos"),(Double) json.get("sign yPos"),(Double) json.get("sign zPos"));
+    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) json.get("sign world")), ((Number) json.get("sign xPos")).doubleValue(),((Number) json.get("sign yPos")).doubleValue(),((Number) json.get("sign zPos")).doubleValue());
     				if(!loc.equals(fileLoc)) continue;
     				file.delete();
     			} catch (Exception ex) {
