@@ -186,7 +186,7 @@ class ShopEventsTest {
         assertDoesNotThrow(() -> events.useShop(event));
 
         verify(event).setCancelled(true);
-        verify(player).sendMessage("§cShop has an invalid quantity or price. Contact the shop owner.");
+        verify(player).sendMessage("§cThe terms on this shop sign make no sense. Speak to the shop owner.");
         verify(inventory).getItemInMainHand();
         verifyNoMoreInteractions(inventory);
     }

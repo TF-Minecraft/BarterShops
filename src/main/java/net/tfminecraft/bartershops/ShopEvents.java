@@ -190,7 +190,7 @@ public class ShopEvents implements Listener{
 		if(hand.getType().equals(Material.REDSTONE)) return;
 		ShopSign shop = db.getShopFromLoc(b.getLocation());
 		if(shop == null || !shop.hasValidTerms()) {
-			p.sendMessage("§cShop has an invalid quantity or price. Contact the shop owner.");
+			p.sendMessage("§cThe terms on this shop sign make no sense. Speak to the shop owner.");
 			return;
 		}
 		if(ShopEmbargo.blocked(p, shop)) {
