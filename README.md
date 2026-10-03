@@ -34,7 +34,8 @@ python3 path/to/TLibs/tools/install-plugins.py --pom pom.xml --mode pinned &&
   mvn clean verify
 ```
 
-Point the installer at your TLibs checkout. The token needs Contents read access
+The installer comes from a separate TLibs checkout
+(`git clone https://github.com/TF-Minecraft/TLibs.git`); point `path/to/TLibs` at it. The token needs Contents read access
 to TF-Minecraft/ServerAssets. The prompt keeps it out of shell history, the
 subshell keeps it out of your session and Maven, and Maven only runs if both
 preparation steps succeed. CI supplies it from `DEPS_TOKEN`.
