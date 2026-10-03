@@ -25,18 +25,18 @@ Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/
 ## Tests
 
 Install the pinned shared plugin dependencies, download the private build
-inputs, then run the build with Java 21:
+inputs, then run the build with Java 21. In Bash:
 
-```sh
+```bash
 python3 path/to/TLibs/tools/install-plugins.py --pom pom.xml --mode pinned
-read -rsp 'ServerAssets token: ' GH_TOKEN && echo && export GH_TOKEN
-bash .github/scripts/prepare-release.sh
+read -rsp 'ServerAssets token: ' token && echo
+GH_TOKEN="$token" bash .github/scripts/prepare-release.sh; unset token
 mvn clean verify
 ```
 
 Point the installer at your TLibs checkout. The token needs Contents read access
-to TF-Minecraft/ServerAssets; reading it with a prompt keeps it out of shell
-history. CI supplies it from `DEPS_TOKEN`.
+to TF-Minecraft/ServerAssets. The prompt keeps it out of shell history, and only
+the download script receives it. CI supplies it from `DEPS_TOKEN`.
 
 Tests use JUnit and Mockito and run without a live Minecraft server.
 
