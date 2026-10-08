@@ -24,23 +24,13 @@ Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/
 
 ## Tests
 
-Install the pinned shared plugin dependencies, download the private build
-inputs, then run the build with Java 21. In Bash:
+With Java 21 and the [build dependencies](https://github.com/TF-Minecraft/Docs/blob/main/projects/BarterShops/README.md#build-and-dependencies) prepared,
+run `mvn clean verify`.
 
-```bash
-python3 path/to/TLibs/tools/install-plugins.py --pom pom.xml --mode pinned &&
-  (read -rsp 'ServerAssets token: ' GH_TOKEN && echo && export GH_TOKEN &&
-    bash .github/scripts/prepare-release.sh) &&
-  mvn clean verify
-```
-
-The installer comes from a separate TLibs checkout
-(`git clone https://github.com/TF-Minecraft/TLibs.git`); point `path/to/TLibs` at it. The token needs Contents read access
-to TF-Minecraft/ServerAssets. The prompt keeps it out of shell history, the
-subshell keeps it out of your session and Maven, and Maven only runs if both
-preparation steps succeed. CI supplies it from `DEPS_TOKEN`.
-
-Tests use JUnit and Mockito and run without a live Minecraft server.
+JUnit 5 and Mockito cover sign creation, trades, storage and embargo handling.
+Surefire writes results to `target/surefire-reports/`, which the Build workflow
+uploads. No coverage report or threshold is configured. The suite runs without
+a live Minecraft server or the real economy and faction plugins.
 
 ## License
 
