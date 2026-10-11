@@ -453,6 +453,30 @@ class ShopEventsTest {
     }
 
     @Test
+    void chestThePlayerMayNotOpenIsRejected() {
+        ShopSign shop = creatingShop();
+        PlayerInteractEvent event = click(chestAt(new Location(world, 1, 64, 0)));
+        // A lock or claim plugin has already refused to open the chest for this player.
+        when(event.useInteractedBlock()).thenReturn(Event.Result.DENY);
+
+        events.createShopEvent(event);
+
+        verify(event, never()).setCancelled(anyBoolean());
+        verify(player).sendMessage("§cYou can only use a chest you are allowed to open");
+        assertEquals(1, events.shopCreating.get(player));
+        assertNull(shop.getStorageLoc());
+    }
+
+    @Test
+    void createShopRunsAfterLockAndClaimPlugins() throws NoSuchMethodException {
+        EventHandler handler = ShopEvents.class.getMethod("createShopEvent", PlayerInteractEvent.class)
+                .getAnnotation(EventHandler.class);
+
+        assertEquals(EventPriority.HIGHEST, handler.priority());
+        assertFalse(handler.ignoreCancelled());
+    }
+
+    @Test
     void storageNeedsRedstoneInHand() {
         ShopSign shop = creatingShop();
         holding(Material.STICK);

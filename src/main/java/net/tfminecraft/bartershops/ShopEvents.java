@@ -25,6 +25,7 @@ import org.bukkit.block.data.type.HangingSign;
 import org.bukkit.block.data.type.WallHangingSign;
 import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -134,8 +135,9 @@ public class ShopEvents implements Listener{
 	}
 	
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	// Runs after lock and claim plugins, so the storage step can see whether the player may open the chest.
 	@SuppressWarnings("deprecation")
-	@EventHandler
+	@EventHandler(priority = EventPriority.HIGHEST)
 	public void createShopEvent(PlayerInteractEvent e) {
 		if(!e.getAction().equals(Action.RIGHT_CLICK_BLOCK)) return;
 		Block b = e.getClickedBlock();
@@ -167,6 +169,10 @@ public class ShopEvents implements Listener{
 				ItemStack redstone = p.getInventory().getItemInMainHand();
 				if(!redstone.getType().equals(Material.REDSTONE)) return;
 				if(!b.getType().equals(Material.CHEST)) return;
+				if(e.useInteractedBlock() == Event.Result.DENY) {
+					p.sendMessage("§cYou can only use a chest you are allowed to open");
+					return;
+				}
 				e.setCancelled(true);
 				ShopSign shop = currentShop.get(p);
 				if(b.getLocation().distanceSquared(shop.getSignLoc()) > 1024) {
