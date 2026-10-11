@@ -1,7 +1,10 @@
 package net.tfminecraft.bartershops;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -307,26 +310,34 @@ public class ShopEvents implements Listener{
 		return p.getUniqueId().toString().equals(db.getOwnerFromLoc(signLoc));
 	}
 
-	// The broken block itself if it is a sign, and any sign that pops because it hangs on it.
-	private List<Block> signsBrokenWith(Block b) {
+	// Every sign that comes down with the broken block: the block itself, signs held up by anything
+	// that falls, and sand or gravel left with nothing under it.
+	private List<Block> signsBrokenWith(Block broken) {
 		List<Block> signs = new ArrayList<>();
-		if(b.getType().toString().contains("SIGN")) signs.add(b);
-		for(BlockFace face : NEIGHBOURS) {
-			Block n = b.getRelative(face);
-			if(!n.getType().toString().contains("SIGN")) continue;
-			if(supports(n.getBlockData()).contains(face.getOppositeFace())) signs.add(n);
+		Set<Block> falling = new HashSet<>(List.of(broken));
+		Deque<Block> queue = new ArrayDeque<>(falling);
+		while(!queue.isEmpty()) {
+			Block b = queue.poll();
+			if(b.getType().toString().contains("SIGN")) signs.add(b);
+			for(BlockFace face : NEIGHBOURS) {
+				Block n = b.getRelative(face);
+				if(falling.contains(n) || !fallsWithout(n, face.getOppositeFace())) continue;
+				falling.add(n);
+				queue.add(n);
+			}
 		}
 		return signs;
 	}
 
-	// Sides holding a sign up. A wall hanging sign counts both of its sides.
+	private static boolean fallsWithout(Block b, BlockFace side) {
+		if(supports(b.getBlockData()).contains(side)) return true;
+		return side == BlockFace.DOWN && b.getType().hasGravity();
+	}
+
+	// Sides holding a sign up. Wall hanging signs stay up once placed, even with both sides gone.
 	static Set<BlockFace> supports(BlockData data) {
 		if(data instanceof WallSign wall) return Set.of(wall.getFacing().getOppositeFace());
-		if(data instanceof WallHangingSign wall) {
-			BlockFace facing = wall.getFacing();
-			if(facing == BlockFace.NORTH || facing == BlockFace.SOUTH) return Set.of(BlockFace.EAST, BlockFace.WEST);
-			return Set.of(BlockFace.NORTH, BlockFace.SOUTH);
-		}
+		if(data instanceof WallHangingSign) return Set.of();
 		if(data instanceof HangingSign) return Set.of(BlockFace.UP);
 		if(data instanceof org.bukkit.block.data.type.Sign) return Set.of(BlockFace.DOWN);
 		return Set.of();

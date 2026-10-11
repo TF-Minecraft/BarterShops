@@ -3,6 +3,7 @@ package net.tfminecraft.bartershops;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.lang.reflect.Proxy;
 import java.util.Set;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +23,7 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockType;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
@@ -48,6 +50,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockedStatic;
 
 import io.papermc.paper.registry.RegistryAccess;
@@ -234,15 +237,29 @@ class ShopEventsTest {
         private static Sound villagerNo;
         private static Sound orbPickup;
         private static Sound other;
+        private static BlockType sand;
 
         // Loading Registry asks for registries again, so this must be re-entrant.
         static Registry<?> registry() {
             if (registry == null) {
-                registry = mock(Registry.class, invocation -> invocation.getMethod().getName().equals("getOrThrow")
-                    ? sound(invocation.<NamespacedKey>getArgument(0).getKey())
-                    : RETURNS_DEFAULTS.answer(invocation));
+                registry = mock(Registry.class, invocation -> switch (invocation.getMethod().getName()) {
+                    case "getOrThrow" -> sound(invocation.<NamespacedKey>getArgument(0).getKey());
+                    case "get" -> invocation.getArgument(0) instanceof NamespacedKey key ? blockType(key.getKey()) : null;
+                    default -> RETURNS_DEFAULTS.answer(invocation);
+                });
             }
             return registry;
+        }
+
+        // Material.hasGravity asks the block registry; sand is the only falling block the tests need.
+        // A plain proxy, because a Mockito mock would load BlockType's constants from this registry.
+        static BlockType blockType(String key) {
+            if (!key.equals("sand")) return null;
+            if (sand == null) {
+                sand = (BlockType) Proxy.newProxyInstance(BlockType.class.getClassLoader(), new Class<?>[] {BlockType.class},
+                    (proxy, method, args) -> method.getName().equals("hasGravity") ? Boolean.TRUE : null);
+            }
+            return sand;
         }
 
         static Sound sound(String key) {
@@ -859,17 +876,126 @@ class ShopEventsTest {
     void eachSignKindNamesTheBlocksHoldingItUp() {
         WallSign wall = mock(WallSign.class);
         when(wall.getFacing()).thenReturn(BlockFace.NORTH);
-        WallHangingSign wallHanging = mock(WallHangingSign.class);
-        when(wallHanging.getFacing()).thenReturn(BlockFace.NORTH);
-        WallHangingSign wallHangingEast = mock(WallHangingSign.class);
-        when(wallHangingEast.getFacing()).thenReturn(BlockFace.EAST);
 
         assertEquals(Set.of(BlockFace.SOUTH), ShopEvents.supports(wall));
-        assertEquals(Set.of(BlockFace.EAST, BlockFace.WEST), ShopEvents.supports(wallHanging));
-        assertEquals(Set.of(BlockFace.NORTH, BlockFace.SOUTH), ShopEvents.supports(wallHangingEast));
+        assertEquals(Set.of(), ShopEvents.supports(mock(WallHangingSign.class)));
         assertEquals(Set.of(BlockFace.UP), ShopEvents.supports(mock(HangingSign.class)));
         assertEquals(Set.of(BlockFace.DOWN), ShopEvents.supports(mock(org.bukkit.block.data.type.Sign.class)));
         assertEquals(Set.of(), ShopEvents.supports(mock(BlockData.class)));
+    }
+
+    @Test
+    void otherPlayersCannotDropAShopSignByBreakingWhatItsChainHangsFrom() {
+        Block top = blockOf(Material.OAK_HANGING_SIGN);
+        Block ceiling = blockOf(Material.STONE);
+        hangsUnder(top, ceiling);
+        hangsUnder(block, top);
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(ceiling, player);
+
+        events.breakDoor(event);
+
+        assertTrue(event.isCancelled());
+        verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void ownersBreakingTheTopOfAChainDeleteEveryShopInIt() {
+        Location topLocation = new Location(world, 0, 65, 0);
+        Block top = blockOf(Material.OAK_HANGING_SIGN);
+        when(top.getType()).thenReturn(Material.OAK_HANGING_SIGN, Material.OAK_HANGING_SIGN, Material.AIR);
+        when(top.getLocation()).thenReturn(topLocation);
+        when(block.getType()).thenReturn(Material.OAK_HANGING_SIGN, Material.OAK_HANGING_SIGN, Material.AIR);
+        Block ceiling = blockOf(Material.STONE);
+        hangsUnder(top, ceiling);
+        hangsUnder(block, top);
+        when(world.getBlockAt(topLocation)).thenReturn(top);
+        when(world.getBlockAt(signLocation)).thenReturn(block);
+        for (Location shop : List.of(topLocation, signLocation)) {
+            when(events.db.shopExistsFromLoc(shop)).thenReturn(true);
+            when(events.db.getOwnerFromLoc(shop)).thenReturn(CUSTOMER.toString());
+        }
+        BlockBreakEvent event = new BlockBreakEvent(ceiling, player);
+
+        List<Runnable> checks = scheduledBreakChecks(event);
+
+        assertFalse(event.isCancelled());
+        assertEquals(2, checks.size());
+        checks.forEach(Runnable::run);
+        verify(events.db).deleteFile(topLocation);
+        verify(events.db).deleteFile(signLocation);
+    }
+
+    @Test
+    void otherPlayersCannotDropAShopSignByUndercuttingTheSandItHangsOn() {
+        Block ground = blockOf(Material.STONE);
+        Block sand = blockOf(Material.SAND);
+        when(ground.getRelative(BlockFace.UP)).thenReturn(sand);
+        when(sand.getRelative(BlockFace.NORTH)).thenReturn(block);
+        WallSign data = mock(WallSign.class);
+        when(data.getFacing()).thenReturn(BlockFace.NORTH);
+        when(block.getBlockData()).thenReturn(data);
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(ground, player);
+
+        events.breakDoor(event);
+
+        assertTrue(event.isCancelled());
+        verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = BlockFace.class, names = {"EAST", "WEST"})
+    void anyoneCanBreakTheBlocksBesideAWallHangingShopSign(BlockFace side) {
+        wallHangingSignFacingNorth();
+        Block post = blockOf(Material.STONE);
+        when(post.getRelative(side.getOppositeFace())).thenReturn(block);
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(post, player);
+
+        events.breakDoor(event);
+
+        assertFalse(event.isCancelled());
+        verify(events.db, never()).shopExistsFromLoc(any());
+    }
+
+    @Test
+    void otherPlayersCannotBreakAWallHangingShopSign() {
+        wallHangingSignFacingNorth();
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+
+        events.breakDoor(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    private void wallHangingSignFacingNorth() {
+        WallHangingSign data = mock(WallHangingSign.class);
+        when(data.getFacing()).thenReturn(BlockFace.NORTH);
+        when(block.getType()).thenReturn(Material.OAK_WALL_HANGING_SIGN);
+        when(block.getBlockData()).thenReturn(data);
+    }
+
+    // A block of the given type with air on every side.
+    private static Block blockOf(Material type) {
+        Block b = mock(Block.class);
+        Block air = mock(Block.class);
+        when(air.getType()).thenReturn(Material.AIR);
+        when(b.getType()).thenReturn(type);
+        when(b.getRelative(any(BlockFace.class))).thenReturn(air);
+        return b;
+    }
+
+    // Hangs a ceiling hanging sign from the block above it.
+    private static void hangsUnder(Block sign, Block above) {
+        when(sign.getBlockData()).thenReturn(mock(HangingSign.class));
+        when(above.getRelative(BlockFace.DOWN)).thenReturn(sign);
     }
 
     // A stone block with the shop sign on its north face, facing north.
@@ -1056,6 +1182,12 @@ class ShopEventsTest {
     }
 
     private Runnable scheduledBreakCheck(BlockBreakEvent event) {
+        List<Runnable> tasks = scheduledBreakChecks(event);
+        assertEquals(1, tasks.size());
+        return tasks.get(0);
+    }
+
+    private List<Runnable> scheduledBreakChecks(BlockBreakEvent event) {
         ShopMain previousPlugin = ShopMain.plugin;
         ShopMain plugin = mock(ShopMain.class);
         BukkitScheduler scheduler = mock(BukkitScheduler.class);
@@ -1071,9 +1203,8 @@ class ShopEventsTest {
         } finally {
             ShopMain.plugin = previousPlugin;
         }
-        assertEquals(1, tasks.size());
         verify(events.db, never()).deleteFile(any());
-        return tasks.get(0);
+        return tasks;
     }
 
     /**
