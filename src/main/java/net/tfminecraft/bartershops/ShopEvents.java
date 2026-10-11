@@ -135,7 +135,7 @@ public class ShopEvents implements Listener{
 	}
 	
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
-	// Runs after lock and claim plugins, so the storage step can see whether the player may open the chest.
+	// Runs after earlier-priority protection handlers, so the storage step can see whether they refused the chest.
 	@SuppressWarnings("deprecation")
 	@EventHandler(priority = EventPriority.HIGHEST)
 	public void createShopEvent(PlayerInteractEvent e) {
