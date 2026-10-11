@@ -21,8 +21,13 @@ import org.bukkit.Server;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.type.HangingSign;
+import org.bukkit.block.data.type.WallHangingSign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -268,6 +273,9 @@ class ShopEventsTest {
         when(block.getType()).thenReturn(Material.OAK_WALL_SIGN);
         when(block.getLocation()).thenReturn(signLocation);
         when(block.getState()).thenReturn(sign);
+        Block air = mock(Block.class);
+        when(air.getType()).thenReturn(Material.AIR);
+        when(block.getRelative(any(BlockFace.class))).thenReturn(air);
         signLines("[Buy]");
         embargo = mockStatic(ShopEmbargo.class);
         denar = mockStatic(DenarEconomy.class);
@@ -754,6 +762,7 @@ class ShopEventsTest {
     @Test
     void breakingAShopSignDeletesItOnceTheSignIsGone() {
         when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
         when(block.getType()).thenReturn(Material.OAK_WALL_SIGN, Material.OAK_WALL_SIGN, Material.AIR);
         when(world.getBlockAt(signLocation)).thenReturn(block);
 
@@ -766,12 +775,115 @@ class ShopEventsTest {
     @Test
     void cancelledShopSignBreaksKeepTheShop() {
         when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
         when(world.getBlockAt(signLocation)).thenReturn(block);
 
         Runnable check = scheduledBreakCheck(new BlockBreakEvent(block, player));
 
         check.run();
         verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void otherPlayersCannotBreakAShopSign() {
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            events.breakDoor(event);
+            bukkit.verifyNoInteractions();
+        }
+
+        assertTrue(event.isCancelled());
+        verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void staffCanBreakOtherPlayersShops() {
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        when(player.hasPermission(ShopEvents.ADMIN_PERMISSION)).thenReturn(true);
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+
+        scheduledBreakCheck(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void otherPlayersCannotBreakTheBlockAShopSignHangsOn() {
+        Block wall = signOnWall();
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        BlockBreakEvent event = new BlockBreakEvent(wall, player);
+
+        events.breakDoor(event);
+
+        assertTrue(event.isCancelled());
+        verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+    }
+
+    @Test
+    void ownersBreakingTheBlockBehindTheirSignDeleteTheShop() {
+        Block wall = signOnWall();
+        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
+        when(block.getType()).thenReturn(Material.OAK_WALL_SIGN, Material.OAK_WALL_SIGN, Material.AIR);
+        when(world.getBlockAt(signLocation)).thenReturn(block);
+        BlockBreakEvent event = new BlockBreakEvent(wall, player);
+
+        Runnable check = scheduledBreakCheck(event);
+
+        assertFalse(event.isCancelled());
+        check.run();
+        verify(events.db).deleteFile(signLocation);
+    }
+
+    @Test
+    void signsNotHangingOnTheBrokenBlockAreIgnored() {
+        Block wall = signOnWall();
+        WallSign data = mock(WallSign.class);
+        when(data.getFacing()).thenReturn(BlockFace.EAST);
+        when(block.getBlockData()).thenReturn(data);
+        BlockBreakEvent event = new BlockBreakEvent(wall, player);
+
+        events.breakDoor(event);
+
+        assertFalse(event.isCancelled());
+        verifyNoInteractions(events.db);
+    }
+
+    @Test
+    void eachSignKindNamesTheBlocksHoldingItUp() {
+        WallSign wall = mock(WallSign.class);
+        when(wall.getFacing()).thenReturn(BlockFace.NORTH);
+        WallHangingSign wallHanging = mock(WallHangingSign.class);
+        when(wallHanging.getFacing()).thenReturn(BlockFace.NORTH);
+        WallHangingSign wallHangingEast = mock(WallHangingSign.class);
+        when(wallHangingEast.getFacing()).thenReturn(BlockFace.EAST);
+
+        assertEquals(Set.of(BlockFace.SOUTH), ShopEvents.supports(wall));
+        assertEquals(Set.of(BlockFace.EAST, BlockFace.WEST), ShopEvents.supports(wallHanging));
+        assertEquals(Set.of(BlockFace.NORTH, BlockFace.SOUTH), ShopEvents.supports(wallHangingEast));
+        assertEquals(Set.of(BlockFace.UP), ShopEvents.supports(mock(HangingSign.class)));
+        assertEquals(Set.of(BlockFace.DOWN), ShopEvents.supports(mock(org.bukkit.block.data.type.Sign.class)));
+        assertEquals(Set.of(), ShopEvents.supports(mock(BlockData.class)));
+    }
+
+    // A stone block with the shop sign on its north face, facing north.
+    private Block signOnWall() {
+        Block wall = mock(Block.class);
+        Block air = mock(Block.class);
+        when(air.getType()).thenReturn(Material.AIR);
+        when(wall.getType()).thenReturn(Material.STONE);
+        when(wall.getRelative(any(BlockFace.class))).thenReturn(air);
+        when(wall.getRelative(BlockFace.NORTH)).thenReturn(block);
+        WallSign data = mock(WallSign.class);
+        when(data.getFacing()).thenReturn(BlockFace.NORTH);
+        when(block.getBlockData()).thenReturn(data);
+        return wall;
     }
 
     @Test

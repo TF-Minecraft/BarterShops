@@ -1,15 +1,24 @@
 package net.tfminecraft.bartershops;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.type.HangingSign;
+import org.bukkit.block.data.type.WallHangingSign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -32,6 +41,10 @@ public class ShopEvents implements Listener{
 	public HashMap<Player, ShopSign> currentShop = new HashMap<>();
 	
 	public HashMap<Player, Long> cooldown = new HashMap<>();
+
+	// Lets staff break shops owned by other players.
+	public static final String ADMIN_PERMISSION = "bartershops.admin";
+	private static final BlockFace[] NEIGHBOURS = {BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
 	
 	Database db = new Database();
 	
@@ -265,21 +278,60 @@ public class ShopEvents implements Listener{
 	
 	@EventHandler
 	public void breakDoor(BlockBreakEvent e) {
-		Block b = e.getBlock();
-		String type = e.getBlock().getType().toString();
-		if(!b.getType().toString().contains("SIGN")) return;
-		Boolean isShop = db.shopExistsFromLoc(b.getLocation());
-		if(isShop != false) {
+		Player p = e.getPlayer();
+		List<Block> shops = new ArrayList<>();
+		for(Block b : signsBrokenWith(e.getBlock())) {
+			if(db.shopExistsFromLoc(b.getLocation()) == false) continue;
+			if(!mayBreak(p, b.getLocation())) {
+				e.setCancelled(true);
+				p.sendMessage("§cOnly the shop owner can break this shop.");
+				return;
+			}
+			shops.add(b);
+		}
+		for(Block b : shops) {
+			String type = b.getType().toString();
 			new BukkitRunnable()
 			{
 				public void run()
 			    {
-					if(e.getBlock().getLocation().getBlock().getType().toString().equals(type)) return;
+					if(b.getLocation().getBlock().getType().toString().equals(type)) return;
 					db.deleteFile(b.getLocation());
 			    }
 			}.runTaskLater(ShopMain.plugin,5L);
 		}
 	}
+
+	private boolean mayBreak(Player p, Location signLoc) {
+		if(p.hasPermission(ADMIN_PERMISSION)) return true;
+		return p.getUniqueId().toString().equals(db.getOwnerFromLoc(signLoc));
+	}
+
+	// The broken block itself if it is a sign, and any sign that pops because it hangs on it.
+	private List<Block> signsBrokenWith(Block b) {
+		List<Block> signs = new ArrayList<>();
+		if(b.getType().toString().contains("SIGN")) signs.add(b);
+		for(BlockFace face : NEIGHBOURS) {
+			Block n = b.getRelative(face);
+			if(!n.getType().toString().contains("SIGN")) continue;
+			if(supports(n.getBlockData()).contains(face.getOppositeFace())) signs.add(n);
+		}
+		return signs;
+	}
+
+	// Sides holding a sign up. A wall hanging sign counts both of its sides.
+	static Set<BlockFace> supports(BlockData data) {
+		if(data instanceof WallSign wall) return Set.of(wall.getFacing().getOppositeFace());
+		if(data instanceof WallHangingSign wall) {
+			BlockFace facing = wall.getFacing();
+			if(facing == BlockFace.NORTH || facing == BlockFace.SOUTH) return Set.of(BlockFace.EAST, BlockFace.WEST);
+			return Set.of(BlockFace.NORTH, BlockFace.SOUTH);
+		}
+		if(data instanceof HangingSign) return Set.of(BlockFace.UP);
+		if(data instanceof org.bukkit.block.data.type.Sign) return Set.of(BlockFace.DOWN);
+		return Set.of();
+	}
+
 	private ItemStack firstItem(Inventory i) {
 		for(ItemStack item : i.getStorageContents()) {
 			if(item == null) continue;
