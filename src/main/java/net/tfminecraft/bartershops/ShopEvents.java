@@ -6,8 +6,10 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -24,14 +26,18 @@ import org.bukkit.block.data.type.WallHangingSign;
 import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
+
+import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
 import net.tfminecraft.denareconomy.DenarEconomy;
 import net.tfminecraft.denareconomy.data.Account;
@@ -48,6 +54,12 @@ public class ShopEvents implements Listener{
 	// Lets staff break shops owned by other players.
 	public static final String ADMIN_PERMISSION = "bartershops.admin";
 	private static final BlockFace[] NEIGHBOURS = {BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
+	// Long enough for a tall column of sand to finish falling.
+	static final long APPROVAL_MILLIS = 60_000L;
+
+	// Shop signs an allowed break is expected to bring down, with when each approval runs out.
+	final Map<Location, Long> approvedRemovals = new HashMap<>();
+	LongSupplier clock = System::currentTimeMillis;
 	
 	Database db = new Database();
 	
@@ -282,7 +294,6 @@ public class ShopEvents implements Listener{
 	@EventHandler
 	public void breakDoor(BlockBreakEvent e) {
 		Player p = e.getPlayer();
-		List<Block> shops = new ArrayList<>();
 		for(Block b : signsBrokenWith(e.getBlock())) {
 			if(db.shopExistsFromLoc(b.getLocation()) == false) continue;
 			if(!mayBreak(p, b.getLocation())) {
@@ -290,19 +301,59 @@ public class ShopEvents implements Listener{
 				p.sendMessage("§cOnly the shop owner can break this shop.");
 				return;
 			}
-			shops.add(b);
 		}
-		for(Block b : shops) {
-			String type = b.getType().toString();
-			new BukkitRunnable()
-			{
-				public void run()
-			    {
-					if(b.getLocation().getBlock().getType().toString().equals(type)) return;
-					db.deleteFile(b.getLocation());
-			    }
-			}.runTaskLater(ShopMain.plugin,5L);
+	}
+
+	// Once nothing has cancelled the break: the broken sign's record goes now, and signs expected
+	// to fall with it may come down for a while.
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void approveBreak(BlockBreakEvent e) {
+		for(Block b : signsBrokenWith(e.getBlock())) {
+			Location loc = b.getLocation();
+			if(db.shopExistsFromLoc(loc) == false) continue;
+			if(b.equals(e.getBlock())) db.deleteFile(loc);
+			else approvedRemovals.put(loc, clock.getAsLong() + APPROVAL_MILLIS);
 		}
+	}
+
+	// Physics, falling blocks and the like: a shop sign comes down only when an allowed break approved it.
+	@EventHandler(ignoreCancelled = true)
+	public void keepShopSign(BlockDestroyEvent e) {
+		Block b = e.getBlock();
+		if(!isSign(b) || approved(b.getLocation())) return;
+		if(db.shopExistsFromLoc(b.getLocation())) e.setCancelled(true);
+	}
+
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void removeDestroyedShop(BlockDestroyEvent e) {
+		Block b = e.getBlock();
+		if(!isSign(b) || !approved(b.getLocation())) return;
+		approvedRemovals.remove(b.getLocation());
+		db.deleteFile(b.getLocation());
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void entityExplode(EntityExplodeEvent e) {
+		e.blockList().removeIf(this::isShopSign);
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void blockExplode(BlockExplodeEvent e) {
+		e.blockList().removeIf(this::isShopSign);
+	}
+
+	private boolean approved(Location loc) {
+		long now = clock.getAsLong();
+		approvedRemovals.values().removeIf(expiry -> expiry <= now);
+		return approvedRemovals.containsKey(loc);
+	}
+
+	private boolean isShopSign(Block b) {
+		return isSign(b) && db.shopExistsFromLoc(b.getLocation());
+	}
+
+	private static boolean isSign(Block b) {
+		return b.getType().toString().contains("SIGN");
 	}
 
 	private boolean mayBreak(Player p, Location signLoc) {

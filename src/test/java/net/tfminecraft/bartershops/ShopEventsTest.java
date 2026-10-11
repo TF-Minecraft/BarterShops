@@ -3,17 +3,20 @@ package net.tfminecraft.bartershops;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Set;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.ExplosionResult;
 import org.bukkit.Material;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
@@ -23,6 +26,7 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.BlockType;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
@@ -30,16 +34,22 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.type.HangingSign;
 import org.bukkit.block.data.type.WallHangingSign;
 import org.bukkit.block.data.type.WallSign;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Cancellable;
+import org.bukkit.event.Event;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.scheduler.BukkitScheduler;
-import org.bukkit.scheduler.BukkitTask;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +62,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockedStatic;
+
+import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
 import io.papermc.paper.registry.RegistryAccess;
 import net.tfminecraft.bartershops.sf.ShopEmbargo;
@@ -777,40 +789,34 @@ class ShopEventsTest {
     // --- Breaking shop signs ---
 
     @Test
-    void breakingAShopSignDeletesItOnceTheSignIsGone() {
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
-        when(block.getType()).thenReturn(Material.OAK_WALL_SIGN, Material.OAK_WALL_SIGN, Material.AIR);
-        when(world.getBlockAt(signLocation)).thenReturn(block);
+    void breakingAShopSignDeletesItsRecord() {
+        shopOwnedBy(signLocation, CUSTOMER);
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
 
-        Runnable check = scheduledBreakCheck(new BlockBreakEvent(block, player));
+        fire(event);
 
-        check.run();
+        assertFalse(event.isCancelled());
         verify(events.db).deleteFile(signLocation);
+        assertTrue(events.approvedRemovals.isEmpty());
     }
 
     @Test
-    void cancelledShopSignBreaksKeepTheShop() {
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
-        when(world.getBlockAt(signLocation)).thenReturn(block);
+    void shopSignBreaksCancelledByAnotherPluginKeepTheShop() {
+        shopOwnedBy(signLocation, CUSTOMER);
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
 
-        Runnable check = scheduledBreakCheck(new BlockBreakEvent(block, player));
+        fire(event, () -> event.setCancelled(true));
 
-        check.run();
         verify(events.db, never()).deleteFile(any());
+        assertTrue(events.approvedRemovals.isEmpty());
     }
 
     @Test
     void otherPlayersCannotBreakAShopSign() {
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(block, player);
 
-        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            events.breakDoor(event);
-            bukkit.verifyNoInteractions();
-        }
+        fire(event);
 
         assertTrue(event.isCancelled());
         verify(player).sendMessage("§cOnly the shop owner can break this shop.");
@@ -819,43 +825,44 @@ class ShopEventsTest {
 
     @Test
     void staffCanBreakOtherPlayersShops() {
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         when(player.hasPermission(ShopEvents.ADMIN_PERMISSION)).thenReturn(true);
         BlockBreakEvent event = new BlockBreakEvent(block, player);
 
-        scheduledBreakCheck(event);
+        fire(event);
 
         assertFalse(event.isCancelled());
+        verify(events.db).deleteFile(signLocation);
     }
 
     @Test
     void otherPlayersCannotBreakTheBlockAShopSignHangsOn() {
         Block wall = signOnWall();
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(wall, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertTrue(event.isCancelled());
         verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+        assertTrue(events.approvedRemovals.isEmpty());
     }
 
     @Test
-    void ownersBreakingTheBlockBehindTheirSignDeleteTheShop() {
+    void ownersBreakingTheBlockBehindTheirSignDeleteTheShopWhenTheSignFalls() {
         Block wall = signOnWall();
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(CUSTOMER.toString());
-        when(block.getType()).thenReturn(Material.OAK_WALL_SIGN, Material.OAK_WALL_SIGN, Material.AIR);
-        when(world.getBlockAt(signLocation)).thenReturn(block);
+        shopOwnedBy(signLocation, CUSTOMER);
         BlockBreakEvent event = new BlockBreakEvent(wall, player);
 
-        Runnable check = scheduledBreakCheck(event);
+        fire(event);
 
         assertFalse(event.isCancelled());
-        check.run();
+        verify(events.db, never()).deleteFile(any());
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy);
+        assertFalse(destroy.isCancelled());
         verify(events.db).deleteFile(signLocation);
+        assertTrue(events.approvedRemovals.isEmpty());
     }
 
     @Test
@@ -866,7 +873,7 @@ class ShopEventsTest {
         when(block.getBlockData()).thenReturn(data);
         BlockBreakEvent event = new BlockBreakEvent(wall, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertFalse(event.isCancelled());
         verifyNoInteractions(events.db);
@@ -890,11 +897,10 @@ class ShopEventsTest {
         Block ceiling = blockOf(Material.STONE);
         hangsUnder(top, ceiling);
         hangsUnder(block, top);
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(ceiling, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertTrue(event.isCancelled());
         verify(player).sendMessage("§cOnly the shop owner can break this shop.");
@@ -902,28 +908,24 @@ class ShopEventsTest {
     }
 
     @Test
-    void ownersBreakingTheTopOfAChainDeleteEveryShopInIt() {
+    void ownersBreakingTheTopOfAChainDeleteEveryShopInItAsItFalls() {
         Location topLocation = new Location(world, 0, 65, 0);
         Block top = blockOf(Material.OAK_HANGING_SIGN);
-        when(top.getType()).thenReturn(Material.OAK_HANGING_SIGN, Material.OAK_HANGING_SIGN, Material.AIR);
         when(top.getLocation()).thenReturn(topLocation);
-        when(block.getType()).thenReturn(Material.OAK_HANGING_SIGN, Material.OAK_HANGING_SIGN, Material.AIR);
+        when(block.getType()).thenReturn(Material.OAK_HANGING_SIGN);
         Block ceiling = blockOf(Material.STONE);
         hangsUnder(top, ceiling);
         hangsUnder(block, top);
-        when(world.getBlockAt(topLocation)).thenReturn(top);
-        when(world.getBlockAt(signLocation)).thenReturn(block);
-        for (Location shop : List.of(topLocation, signLocation)) {
-            when(events.db.shopExistsFromLoc(shop)).thenReturn(true);
-            when(events.db.getOwnerFromLoc(shop)).thenReturn(CUSTOMER.toString());
-        }
+        shopOwnedBy(topLocation, CUSTOMER);
+        shopOwnedBy(signLocation, CUSTOMER);
         BlockBreakEvent event = new BlockBreakEvent(ceiling, player);
 
-        List<Runnable> checks = scheduledBreakChecks(event);
+        fire(event);
 
         assertFalse(event.isCancelled());
-        assertEquals(2, checks.size());
-        checks.forEach(Runnable::run);
+        assertEquals(Set.of(topLocation, signLocation), events.approvedRemovals.keySet());
+        fire(destroyed(top));
+        fire(destroyed(block));
         verify(events.db).deleteFile(topLocation);
         verify(events.db).deleteFile(signLocation);
     }
@@ -934,17 +936,124 @@ class ShopEventsTest {
         Block sand = blockOf(Material.SAND);
         when(ground.getRelative(BlockFace.UP)).thenReturn(sand);
         when(sand.getRelative(BlockFace.NORTH)).thenReturn(block);
-        WallSign data = mock(WallSign.class);
-        when(data.getFacing()).thenReturn(BlockFace.NORTH);
-        when(block.getBlockData()).thenReturn(data);
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        signFacing(BlockFace.NORTH);
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(ground, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertTrue(event.isCancelled());
         verify(player).sendMessage("§cOnly the shop owner can break this shop.");
+    }
+
+    @Test
+    void ownersUndercuttingATallSandColumnDeleteTheShopOnlyWhenTheSignFalls() {
+        long[] now = {1_000L};
+        events.clock = () -> now[0];
+        Block ground = blockOf(Material.STONE);
+        Block below = ground;
+        for (int i = 0; i < 8; i++) {
+            Block sand = blockOf(Material.SAND);
+            when(below.getRelative(BlockFace.UP)).thenReturn(sand);
+            below = sand;
+        }
+        when(below.getRelative(BlockFace.NORTH)).thenReturn(block);
+        signFacing(BlockFace.NORTH);
+        shopOwnedBy(signLocation, CUSTOMER);
+
+        fire(new BlockBreakEvent(ground, player));
+
+        verify(events.db, never()).deleteFile(any());
+        // Eight blocks of sand take about a second to fall one after another.
+        now[0] += 1_000L;
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy);
+        assertFalse(destroy.isCancelled());
+        verify(events.db).deleteFile(signLocation);
+    }
+
+    @Test
+    void otherPlayersCannotDestroyAShopSignOnACactusByBreakingTheSandUnderIt() {
+        Block sand = blockOf(Material.SAND);
+        Block cactus = blockOf(Material.CACTUS);
+        when(sand.getRelative(BlockFace.UP)).thenReturn(cactus);
+        when(cactus.getRelative(BlockFace.UP)).thenReturn(block);
+        when(block.getType()).thenReturn(Material.OAK_SIGN);
+        when(block.getBlockData()).thenReturn(mock(org.bukkit.block.data.type.Sign.class));
+        shopOwnedBy(signLocation, OWNER);
+        BlockBreakEvent event = new BlockBreakEvent(sand, player);
+
+        fire(event);
+
+        // The cactus gives way later, so the break itself goes ahead and the sign stays up.
+        assertFalse(event.isCancelled());
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy);
+        assertTrue(destroy.isCancelled());
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void approvedSignsKeepTheirShopWhenAnotherPluginStopsThemFalling() {
+        Block wall = signOnWall();
+        shopOwnedBy(signLocation, CUSTOMER);
+        fire(new BlockBreakEvent(wall, player));
+
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy, () -> destroy.setCancelled(true));
+
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void approvalsRunOut() {
+        long[] now = {0L};
+        events.clock = () -> now[0];
+        Block wall = signOnWall();
+        shopOwnedBy(signLocation, CUSTOMER);
+        fire(new BlockBreakEvent(wall, player));
+        assertEquals(Set.of(signLocation), events.approvedRemovals.keySet());
+
+        now[0] += ShopEvents.APPROVAL_MILLIS;
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy);
+
+        assertTrue(destroy.isCancelled());
+        assertTrue(events.approvedRemovals.isEmpty());
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void physicsStillDestroysOtherBlocksAndSigns() {
+        Block stone = blockOf(Material.STONE);
+        BlockDestroyEvent stoneDestroy = destroyed(stone);
+        BlockDestroyEvent signDestroy = destroyed(block);
+
+        fire(stoneDestroy);
+        fire(signDestroy);
+
+        assertFalse(stoneDestroy.isCancelled());
+        assertFalse(signDestroy.isCancelled());
+        verify(events.db).shopExistsFromLoc(signLocation);
+        verifyNoMoreInteractions(events.db);
+    }
+
+    @Test
+    void explosionsLeaveShopSignsStanding() {
+        Block stone = blockOf(Material.STONE);
+        Block plainSign = blockOf(Material.OAK_SIGN);
+        when(plainSign.getLocation()).thenReturn(new Location(world, 5, 64, 5));
+        shopOwnedBy(signLocation, OWNER);
+        EntityExplodeEvent creeper = new EntityExplodeEvent(mock(Entity.class), signLocation,
+            new ArrayList<>(List.of(stone, block, plainSign)), 1f, ExplosionResult.DESTROY);
+        BlockExplodeEvent bed = new BlockExplodeEvent(stone, mock(BlockState.class),
+            new ArrayList<>(List.of(stone, block, plainSign)), 1f, ExplosionResult.DESTROY);
+
+        fire(creeper);
+        fire(bed);
+
+        assertEquals(List.of(stone, plainSign), creeper.blockList());
+        assertEquals(List.of(stone, plainSign), bed.blockList());
     }
 
     @ParameterizedTest
@@ -953,11 +1062,10 @@ class ShopEventsTest {
         wallHangingSignFacingNorth();
         Block post = blockOf(Material.STONE);
         when(post.getRelative(side.getOppositeFace())).thenReturn(block);
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(post, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertFalse(event.isCancelled());
         verify(events.db, never()).shopExistsFromLoc(any());
@@ -966,13 +1074,21 @@ class ShopEventsTest {
     @Test
     void otherPlayersCannotBreakAWallHangingShopSign() {
         wallHangingSignFacingNorth();
-        when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(signLocation)).thenReturn(OWNER.toString());
+        shopOwnedBy(signLocation, OWNER);
         BlockBreakEvent event = new BlockBreakEvent(block, player);
 
-        events.breakDoor(event);
+        fire(event);
 
         assertTrue(event.isCancelled());
+    }
+
+    private void shopOwnedBy(Location location, UUID owner) {
+        when(events.db.shopExistsFromLoc(location)).thenReturn(true);
+        when(events.db.getOwnerFromLoc(location)).thenReturn(owner.toString());
+    }
+
+    private static BlockDestroyEvent destroyed(Block b) {
+        return new BlockDestroyEvent(b, null, null, 0, true);
     }
 
     private void wallHangingSignFacingNorth() {
@@ -998,34 +1114,66 @@ class ShopEventsTest {
         when(above.getRelative(BlockFace.DOWN)).thenReturn(sign);
     }
 
+    private void signFacing(BlockFace facing) {
+        WallSign data = mock(WallSign.class);
+        when(data.getFacing()).thenReturn(facing);
+        when(block.getBlockData()).thenReturn(data);
+    }
+
     // A stone block with the shop sign on its north face, facing north.
     private Block signOnWall() {
-        Block wall = mock(Block.class);
-        Block air = mock(Block.class);
-        when(air.getType()).thenReturn(Material.AIR);
-        when(wall.getType()).thenReturn(Material.STONE);
-        when(wall.getRelative(any(BlockFace.class))).thenReturn(air);
+        Block wall = blockOf(Material.STONE);
         when(wall.getRelative(BlockFace.NORTH)).thenReturn(block);
-        WallSign data = mock(WallSign.class);
-        when(data.getFacing()).thenReturn(BlockFace.NORTH);
-        when(block.getBlockData()).thenReturn(data);
+        signFacing(BlockFace.NORTH);
         return wall;
     }
 
     @Test
     void breakingOtherBlocksLeavesShopsAlone() {
         when(block.getType()).thenReturn(Material.CHEST);
-        events.breakDoor(new BlockBreakEvent(block, player));
+        fire(new BlockBreakEvent(block, player));
         verifyNoInteractions(events.db);
     }
 
     @Test
-    void breakingSignsThatAreNotShopsSchedulesNothing() {
-        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            events.breakDoor(new BlockBreakEvent(block, player));
-            bukkit.verifyNoInteractions();
-        }
+    void breakingSignsThatAreNotShopsChangesNothing() {
+        fire(new BlockBreakEvent(block, player));
         verify(events.db, never()).deleteFile(any());
+        assertTrue(events.approvedRemovals.isEmpty());
+    }
+
+    /** Runs the listener's handlers for the event the way Bukkit does. */
+    private void fire(Event event) {
+        fire(event, () -> {});
+    }
+
+    /**
+     * Runs the listener's handlers for the event in priority order, skipping ignoreCancelled handlers
+     * once it is cancelled. {@code otherPlugin} stands for a plugin listening at HIGH priority.
+     */
+    private void fire(Event event, Runnable otherPlugin) {
+        List<Method> handlers = Stream.of(ShopEvents.class.getMethods())
+            .filter(m -> m.isAnnotationPresent(EventHandler.class) && m.getParameterTypes()[0] == event.getClass())
+            .sorted(Comparator.comparing((Method m) -> m.getAnnotation(EventHandler.class).priority()))
+            .toList();
+        assertFalse(handlers.isEmpty());
+        boolean otherPluginRan = false;
+        for (Method handler : handlers) {
+            EventHandler annotation = handler.getAnnotation(EventHandler.class);
+            if (!otherPluginRan && annotation.priority().compareTo(EventPriority.HIGH) > 0) {
+                otherPlugin.run();
+                otherPluginRan = true;
+            }
+            if (annotation.ignoreCancelled() && ((Cancellable) event).isCancelled()) continue;
+            try {
+                handler.invoke(events, event);
+            } catch (InvocationTargetException ex) {
+                throw new AssertionError(ex.getCause());
+            } catch (ReflectiveOperationException ex) {
+                throw new AssertionError(ex);
+            }
+        }
+        if (!otherPluginRan) otherPlugin.run();
     }
 
     // --- Inventory helpers ---
@@ -1179,32 +1327,6 @@ class ShopEventsTest {
         verify(player).playSound(playerLocation, Sound.ENTITY_VILLAGER_NO, 1f, 1f);
         verify(pouch, never()).change(anyDouble());
         verifyNoInteractions(money);
-    }
-
-    private Runnable scheduledBreakCheck(BlockBreakEvent event) {
-        List<Runnable> tasks = scheduledBreakChecks(event);
-        assertEquals(1, tasks.size());
-        return tasks.get(0);
-    }
-
-    private List<Runnable> scheduledBreakChecks(BlockBreakEvent event) {
-        ShopMain previousPlugin = ShopMain.plugin;
-        ShopMain plugin = mock(ShopMain.class);
-        BukkitScheduler scheduler = mock(BukkitScheduler.class);
-        List<Runnable> tasks = new ArrayList<>();
-        when(scheduler.runTaskLater(eq(plugin), any(Runnable.class), eq(5L))).thenAnswer(invocation -> {
-            tasks.add(invocation.getArgument(1));
-            return mock(BukkitTask.class);
-        });
-        ShopMain.plugin = plugin;
-        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            bukkit.when(Bukkit::getScheduler).thenReturn(scheduler);
-            events.breakDoor(event);
-        } finally {
-            ShopMain.plugin = previousPlugin;
-        }
-        verify(events.db, never()).deleteFile(any());
-        return tasks;
     }
 
     /**
