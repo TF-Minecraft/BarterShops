@@ -1006,6 +1006,26 @@ class ShopEventsTest {
     }
 
     @Test
+    void breakingAnApprovedSignDirectlyLeavesNoApprovalForTheNextShop() {
+        Block wall = signOnWall();
+        shopOwnedBy(signLocation, CUSTOMER);
+        fire(new BlockBreakEvent(wall, player));
+        BlockDestroyEvent stopped = destroyed(block);
+        fire(stopped, () -> stopped.setCancelled(true));
+
+        fire(new BlockBreakEvent(block, player));
+
+        assertTrue(events.approvedRemovals.isEmpty());
+        verify(events.db).deleteFile(signLocation);
+        // Someone else builds a shop on the same spot, and physics then reaches it.
+        shopOwnedBy(signLocation, OWNER);
+        BlockDestroyEvent destroy = destroyed(block);
+        fire(destroy);
+        assertTrue(destroy.isCancelled());
+        verify(events.db).deleteFile(signLocation);
+    }
+
+    @Test
     void approvalsRunOut() {
         long[] now = {0L};
         events.clock = () -> now[0];

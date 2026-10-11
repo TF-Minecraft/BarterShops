@@ -308,6 +308,8 @@ public class ShopEvents implements Listener{
 	// to fall with it may come down for a while.
 	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
 	public void approveBreak(BlockBreakEvent e) {
+		// A sign broken directly must not leave an approval for a new shop built in its place.
+		approvedRemovals.remove(e.getBlock().getLocation());
 		for(Block b : signsBrokenWith(e.getBlock())) {
 			Location loc = b.getLocation();
 			if(db.shopExistsFromLoc(loc) == false) continue;
