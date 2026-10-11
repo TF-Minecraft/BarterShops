@@ -6,3 +6,8 @@ author: Drefvelin
 
 depend: [MMOItems, MythicLib]
 softdepend: [SimpleFactions]
+
+permissions:
+  bartershops.admin:
+    description: Break shops owned by other players.
+    default: op

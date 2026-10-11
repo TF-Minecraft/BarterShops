@@ -102,6 +102,12 @@ class DatabaseTest {
     }
 
     @Test
+    void readsTheOwnerEvenWhenTheTermsAreInvalid() throws Exception {
+        writeShop("0.0", "10.0");
+        assertEquals(OWNER, new Database(directory.toFile()).getOwnerFromLoc(new Location(world, 1, 2, 3)));
+    }
+
+    @Test
     void lookupsSkipFoldersUnreadableFilesAndOtherSigns() throws Exception {
         Files.createDirectory(directory.resolve("folder"));
         Files.writeString(directory.resolve("broken.json"), "{");
@@ -111,6 +117,7 @@ class DatabaseTest {
 
         assertNull(database.getShopFromLoc(elsewhere));
         assertFalse(database.shopExistsFromLoc(elsewhere));
+        assertNull(database.getOwnerFromLoc(elsewhere));
         database.deleteFile(elsewhere);
 
         assertTrue(Files.exists(directory.resolve("shop.json")));

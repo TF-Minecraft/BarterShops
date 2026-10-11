@@ -1,25 +1,43 @@
 package net.tfminecraft.bartershops;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.type.HangingSign;
+import org.bukkit.block.data.type.WallHangingSign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
+
+import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
 import net.tfminecraft.denareconomy.DenarEconomy;
 import net.tfminecraft.denareconomy.data.Account;
@@ -32,6 +50,16 @@ public class ShopEvents implements Listener{
 	public HashMap<Player, ShopSign> currentShop = new HashMap<>();
 	
 	public HashMap<Player, Long> cooldown = new HashMap<>();
+
+	// Lets staff break shops owned by other players.
+	public static final String ADMIN_PERMISSION = "bartershops.admin";
+	private static final BlockFace[] NEIGHBOURS = {BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
+	// Long enough for a tall column of sand to finish falling.
+	static final long APPROVAL_MILLIS = 60_000L;
+
+	// Shop signs an allowed break is expected to bring down, with when each approval runs out.
+	final Map<Location, Long> approvedRemovals = new HashMap<>();
+	LongSupplier clock = System::currentTimeMillis;
 	
 	Database db = new Database();
 	
@@ -265,21 +293,109 @@ public class ShopEvents implements Listener{
 	
 	@EventHandler
 	public void breakDoor(BlockBreakEvent e) {
-		Block b = e.getBlock();
-		String type = e.getBlock().getType().toString();
-		if(!b.getType().toString().contains("SIGN")) return;
-		Boolean isShop = db.shopExistsFromLoc(b.getLocation());
-		if(isShop != false) {
-			new BukkitRunnable()
-			{
-				public void run()
-			    {
-					if(e.getBlock().getLocation().getBlock().getType().toString().equals(type)) return;
-					db.deleteFile(b.getLocation());
-			    }
-			}.runTaskLater(ShopMain.plugin,5L);
+		Player p = e.getPlayer();
+		for(Block b : signsBrokenWith(e.getBlock())) {
+			if(db.shopExistsFromLoc(b.getLocation()) == false) continue;
+			if(!mayBreak(p, b.getLocation())) {
+				e.setCancelled(true);
+				p.sendMessage("§cOnly the shop owner can break this shop.");
+				return;
+			}
 		}
 	}
+
+	// Once nothing has cancelled the break: the broken sign's record goes now, and signs expected
+	// to fall with it may come down for a while.
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void approveBreak(BlockBreakEvent e) {
+		// A sign broken directly must not leave an approval for a new shop built in its place.
+		approvedRemovals.remove(e.getBlock().getLocation());
+		for(Block b : signsBrokenWith(e.getBlock())) {
+			Location loc = b.getLocation();
+			if(db.shopExistsFromLoc(loc) == false) continue;
+			if(b.equals(e.getBlock())) db.deleteFile(loc);
+			else approvedRemovals.put(loc, clock.getAsLong() + APPROVAL_MILLIS);
+		}
+	}
+
+	// Physics, falling blocks and the like: a shop sign comes down only when an allowed break approved it.
+	@EventHandler(ignoreCancelled = true)
+	public void keepShopSign(BlockDestroyEvent e) {
+		Block b = e.getBlock();
+		if(!isSign(b) || approved(b.getLocation())) return;
+		if(db.shopExistsFromLoc(b.getLocation())) e.setCancelled(true);
+	}
+
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void removeDestroyedShop(BlockDestroyEvent e) {
+		Block b = e.getBlock();
+		if(!isSign(b) || !approved(b.getLocation())) return;
+		approvedRemovals.remove(b.getLocation());
+		db.deleteFile(b.getLocation());
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void entityExplode(EntityExplodeEvent e) {
+		e.blockList().removeIf(this::isShopSign);
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void blockExplode(BlockExplodeEvent e) {
+		e.blockList().removeIf(this::isShopSign);
+	}
+
+	private boolean approved(Location loc) {
+		long now = clock.getAsLong();
+		approvedRemovals.values().removeIf(expiry -> expiry <= now);
+		return approvedRemovals.containsKey(loc);
+	}
+
+	private boolean isShopSign(Block b) {
+		return isSign(b) && db.shopExistsFromLoc(b.getLocation());
+	}
+
+	private static boolean isSign(Block b) {
+		return b.getType().toString().contains("SIGN");
+	}
+
+	private boolean mayBreak(Player p, Location signLoc) {
+		if(p.hasPermission(ADMIN_PERMISSION)) return true;
+		return p.getUniqueId().toString().equals(db.getOwnerFromLoc(signLoc));
+	}
+
+	// Every sign that comes down with the broken block: the block itself, signs held up by anything
+	// that falls, and sand or gravel left with nothing under it.
+	private List<Block> signsBrokenWith(Block broken) {
+		List<Block> signs = new ArrayList<>();
+		Set<Block> falling = new HashSet<>(List.of(broken));
+		Deque<Block> queue = new ArrayDeque<>(falling);
+		while(!queue.isEmpty()) {
+			Block b = queue.poll();
+			if(b.getType().toString().contains("SIGN")) signs.add(b);
+			for(BlockFace face : NEIGHBOURS) {
+				Block n = b.getRelative(face);
+				if(falling.contains(n) || !fallsWithout(n, face.getOppositeFace())) continue;
+				falling.add(n);
+				queue.add(n);
+			}
+		}
+		return signs;
+	}
+
+	private static boolean fallsWithout(Block b, BlockFace side) {
+		if(supports(b.getBlockData()).contains(side)) return true;
+		return side == BlockFace.DOWN && b.getType().hasGravity();
+	}
+
+	// Sides holding a sign up. Wall hanging signs stay up once placed, even with both sides gone.
+	static Set<BlockFace> supports(BlockData data) {
+		if(data instanceof WallSign wall) return Set.of(wall.getFacing().getOppositeFace());
+		if(data instanceof WallHangingSign) return Set.of();
+		if(data instanceof HangingSign) return Set.of(BlockFace.UP);
+		if(data instanceof org.bukkit.block.data.type.Sign) return Set.of(BlockFace.DOWN);
+		return Set.of();
+	}
+
 	private ItemStack firstItem(Inventory i) {
 		for(ItemStack item : i.getStorageContents()) {
 			if(item == null) continue;

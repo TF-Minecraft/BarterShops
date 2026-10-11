@@ -95,6 +95,22 @@ public class Database {
     	return false;
     }
 	
+	public String getOwnerFromLoc(Location loc) {
+    	for (final File file : shopFiles()) {
+            if (!file.isDirectory()) {
+            	try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8")) {
+    				JSONObject shopJson = (JSONObject) parser.parse(reader);
+    				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) shopJson.get("sign world")), ((Number) shopJson.get("sign xPos")).doubleValue(),((Number) shopJson.get("sign yPos")).doubleValue(),((Number) shopJson.get("sign zPos")).doubleValue());
+    				if(!loc.equals(fileLoc)) continue;
+    				return (String) shopJson.get("owner");
+    			} catch (Exception ex) {
+    				ex.printStackTrace();
+    			}
+            }
+        }
+    	return null;
+    }
+	
 	public void deleteFile(Location loc) {
     	for (final File file : shopFiles()) {
             if (!file.isDirectory()) {
