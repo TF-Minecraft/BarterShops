@@ -12,8 +12,9 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.proc>full</maven.compiler.proc>
-        <denareconomy.version>0.2.0</denareconomy.version>
-        <simplefactions.version>3.0.1</simplefactions.version>
+        <denareconomy.version>0.3.0</denareconomy.version>
+        <simplefactions.version>4.0.0</simplefactions.version>
+        <tlibs.version>2.4.0</tlibs.version>
     </properties>
 
     <dependencies>
@@ -75,6 +76,18 @@
             <groupId>net.tfminecraft</groupId>
             <artifactId>simplefactions</artifactId>
             <version>${simplefactions.version}</version>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>me.plugins</groupId>
+            <artifactId>tlibs</artifactId>
+            <version>${tlibs.version}</version>
             <scope>provided</scope>
             <exclusions>
                 <exclusion>

@@ -97,14 +97,16 @@ class DatabaseTest {
         assertEquals(16, shop.getBarterAmount());
         assertEquals(40, shop.getPrice());
         assertEquals("sword.katana", shop.getPaymentItemString());
-        assertEquals(OWNER, shop.getOwner());
+        assertEquals(OWNER, shop.getOwnerAccount());
         assertEquals("sell", shop.getType());
     }
 
     @Test
     void readsTheOwnerEvenWhenTheTermsAreInvalid() throws Exception {
         writeShop("0.0", "10.0");
-        assertEquals(OWNER, new Database(directory.toFile()).getOwnerFromLoc(new Location(world, 1, 2, 3)));
+        Path file = directory.resolve("shop.json");
+        Files.writeString(file, Files.readString(file).replace("\"owner\":", "\"owner character\": \"" + OWNER + "\", \"owner\":"));
+        assertEquals(OWNER, new Database(directory.toFile()).getOwnerCharacterFromLoc(new Location(world, 1, 2, 3)));
     }
 
     @Test
@@ -117,7 +119,7 @@ class DatabaseTest {
 
         assertNull(database.getShopFromLoc(elsewhere));
         assertFalse(database.shopExistsFromLoc(elsewhere));
-        assertNull(database.getOwnerFromLoc(elsewhere));
+        assertNull(database.getOwnerCharacterFromLoc(elsewhere));
         database.deleteFile(elsewhere);
 
         assertTrue(Files.exists(directory.resolve("shop.json")));
@@ -176,12 +178,14 @@ class DatabaseTest {
         assertTrue(files[0].getName().matches("[0-9a-f-]{36}\\.json"));
         assertTrue(database.shopExistsFromLoc(saved.getSignLoc()));
         ShopSign loaded = database.getShopFromLoc(saved.getSignLoc());
+        assertEquals(saved.getShopId(), loaded.getShopId());
+        assertEquals(saved.getOwnerCharacter(), loaded.getOwnerCharacter());
         assertEquals(saved.getSignLoc(), loaded.getSignLoc());
         assertEquals(saved.getStorageLoc(), loaded.getStorageLoc());
         assertEquals(16, loaded.getBarterAmount());
         assertEquals(40, loaded.getPrice());
         assertEquals("sword.katana", loaded.getPaymentItemString());
-        assertEquals(OWNER, loaded.getOwner());
+        assertEquals(OWNER, loaded.getOwnerAccount());
         assertEquals("buy", loaded.getType());
     }
 
@@ -331,7 +335,8 @@ class DatabaseTest {
         shop.setBarterAmount(16);
         shop.setPrice(40);
         shop.setPaymentItem("sword.katana");
-        shop.setOwner(OWNER);
+        shop.setOwnerAccount(OWNER);
+        shop.setOwnerCharacter("00000000-0000-0000-0000-000000000101");
         shop.setType("buy");
         return shop;
     }

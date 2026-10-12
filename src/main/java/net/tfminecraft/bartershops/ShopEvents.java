@@ -8,10 +8,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -40,9 +42,8 @@ import org.bukkit.inventory.ItemStack;
 
 import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
-import net.tfminecraft.denareconomy.DenarEconomy;
-import net.tfminecraft.denareconomy.data.Account;
-import net.tfminecraft.denareconomy.enums.Accounts;
+import net.tfminecraft.tlibs.character.CharacterRef;
+import net.tfminecraft.tlibs.character.Characters;
 import net.tfminecraft.bartershops.sf.ShopEmbargo;
 
 public class ShopEvents implements Listener{
@@ -63,6 +64,28 @@ public class ShopEvents implements Listener{
 	LongSupplier clock = System::currentTimeMillis;
 	
 	Database db = new Database();
+    ShopTrades trades;
+    BooleanSupplier ready = () -> Characters.available() && Characters.legacyHeirsReady();
+
+    private boolean stillCreating(Player player, ShopSign shop) {
+        if (shop != null && ready.getAsBoolean() && Characters.currentSession(player)
+                .map(session -> session.ref().equals(shop.getOwnerRef().orElse(null))).orElse(false)) return true;
+        shopCreating.remove(player);
+        currentShop.remove(player);
+        player.sendMessage("§cShop creation cancelled: your active character changed or is unavailable.");
+        return false;
+    }
+
+    private boolean setOwner(Player player, ShopSign shop) {
+        Optional<CharacterRef> owner = Characters.currentSession(player).map(session -> session.ref());
+        if (!ready.getAsBoolean() || owner.isEmpty()) {
+            player.sendMessage("§cSelect a character before creating a shop; character shops must be ready.");
+            return false;
+        }
+        shop.setOwnerAccount(owner.get().ownerId().toString());
+        shop.setOwnerCharacter(owner.get().characterId().toString());
+        return true;
+    }
 	
 	// Retain Bukkit chat-event ordering and String message semantics for existing integrations.
 	@SuppressWarnings("deprecation")
@@ -93,6 +116,7 @@ public class ShopEvents implements Listener{
 			    public void run()
 			    {
 			    	ShopSign shop = currentShop.get(player);
+                    if (!stillCreating(player, shop)) return;
 			    	shop.setBarterAmount(amount);
 			    	player.sendTitle("Shop Creation §e3/4", "§aType the price in chat", 5, 80, 6);
 					shopCreating.put(player, 4);
@@ -121,6 +145,7 @@ public class ShopEvents implements Listener{
 			    public void run()
 			    {
 			    	ShopSign shop = currentShop.get(player);
+                    if (!stillCreating(player, shop)) return;
 			    	shop.setPrice(amount);
 			    	player.sendTitle("Shop Creation §e4/4", "§aShop Created!", 5, 80, 6);
 			    	Sign sign = (Sign) shop.getSignLoc().getBlock().getState();
@@ -159,7 +184,7 @@ public class ShopEvents implements Listener{
 					p.sendMessage("§cShop Sign has invalid type");
 					return;
 				}
-				shop.setOwner(p.getUniqueId().toString());
+				if (!setOwner(p, shop)) return;
 				shop.setSignLoc(b.getLocation());
 				e.setCancelled(true);
 				p.sendTitle("Shop Creation §e1/4", "§aRight Click on the storage chest with the redstone", 5, 80, 6);
@@ -175,6 +200,7 @@ public class ShopEvents implements Listener{
 				}
 				e.setCancelled(true);
 				ShopSign shop = currentShop.get(p);
+                if (!stillCreating(p, shop)) return;
 				if(b.getLocation().distanceSquared(shop.getSignLoc()) > 1024) {
 					p.sendMessage("§cChest is too far away");
 					return;
@@ -201,7 +227,7 @@ public class ShopEvents implements Listener{
 				p.sendMessage("§cShop Sign has invalid type");
 				return;
 			}
-			shop.setOwner(p.getUniqueId().toString());
+			if (!setOwner(p, shop)) return;
 			shop.setSignLoc(b.getLocation());
 			e.setCancelled(true);
 			p.sendTitle("Shop Creation §e1/4", "§aRight Click on the storage chest with the redstone", 5, 80, 6);
@@ -227,76 +253,81 @@ public class ShopEvents implements Listener{
 			p.sendMessage("§cThe terms on this shop sign make no sense. Speak to the shop owner.");
 			return;
 		}
-		if(ShopEmbargo.blocked(p, shop)) {
-			p.sendMessage("§cYou cannot use this shop: your nation is under embargo.");
-			p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-			return;
-		}
-		if(!shop.getStorageLoc().getBlock().getType().equals(Material.CHEST)) {
-			p.sendMessage("§cShop missing a storage chest");
-			p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-			return;
-		}
-		Chest storage = (Chest) shop.getStorageLoc().getBlock().getState();
-		
-		if(shop.getType().equalsIgnoreCase("buy")) {
-			// Only stacks of the item being sold count as stock; other items in the chest are never handed over.
-			ItemStack item = firstItem(storage.getInventory());
-			if(item == null || hasEnoughItems(storage.getInventory(), item, shop.getBarterAmount()) == false) {
-				p.sendMessage("§cShop out of stock");
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			// Items that do not fit would be lost after payment, so the whole order must fit.
-			if(hasRoomFor(p.getInventory(), item, shop.getBarterAmount()) == false) {
-				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			Account pouch = DenarEconomy.getPlayerManager().get(p).getPouch();
-			if(pouch.getBal() < shop.getPrice()){
-				p.sendMessage("§cCannot afford this!");
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			pouch.change(shop.getPrice()*-1);
-			DenarEconomy.getMoneyManager().addMoneyToAccount(shop.getOwner(), shop.getPrice(), true, true, Accounts.BANK);
-			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
-			exchangeItems(storage.getInventory(), p.getInventory(), item, shop.getBarterAmount());
-		}
-		if(shop.getType().equalsIgnoreCase("sell")) {
-			ItemStack item = firstItem(storage.getInventory());
-			if(item != null && hasRoomFor(storage.getInventory(), item, shop.getBarterAmount()) == false) {
-				p.sendMessage(ChatColor.RED + "Shop Storage is full!");	
-				return;
-			}
-			if(p.getInventory().firstEmpty() == -1) {
-				p.sendMessage(ChatColor.RED + "Your inventory is full!");	
-				return;
-			}
-			if(DenarEconomy.getPlayerManager().get(UUID.fromString(shop.getOwner())).getBank().getBal() < shop.getPrice()){
-				p.sendMessage("§cThe shop owner lacks money!");
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			if(item == null) {
-				p.sendMessage("§cShop has no item set for selling");
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			if(hasEnoughItems(p.getInventory(), item, shop.getBarterAmount()) == false) {
-				p.sendMessage("§cYou dont have enough to sell");
-				p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-				return;
-			}
-			Account pouch = DenarEconomy.getPlayerManager().get(p).getPouch();
-			DenarEconomy.getMoneyManager().changeBal(shop.getOwner(), shop.getPrice()*-1, Accounts.BANK);
-			DenarEconomy.getMoneyManager().addMoney(p, shop.getPrice(), false, true);
-			p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
-			exchangeItems(p.getInventory(), storage.getInventory(), item, shop.getBarterAmount());
-		}
-	}
-	
+        Optional<CharacterRef> customer = Characters.currentSession(p).map(session -> session.ref());
+        Optional<CharacterRef> owner = shop.getOwnerRef();
+        if (!ready.getAsBoolean() || customer.isEmpty() || owner.isEmpty()) {
+            p.sendMessage("§cThis shop is closed until its owner and your active character are available.");
+            return;
+        }
+        if (!ShopEmbargo.ready()) {
+            refused(p, "§cShops are waiting for faction and tax data. Try again shortly.");
+            return;
+        }
+        if (ShopEmbargo.blocked(p, shop)) {
+            p.sendMessage("§cYou cannot use this shop: your nation is under embargo.");
+            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+            return;
+        }
+        if (!shop.getStorageLoc().getBlock().getType().equals(Material.CHEST)) {
+            refused(p, "§cShop missing a storage chest");
+            return;
+        }
+        Inventory storage = ((Chest) shop.getStorageLoc().getBlock().getState()).getInventory();
+        boolean buy = "buy".equalsIgnoreCase(shop.getType());
+        if (!buy && !"sell".equalsIgnoreCase(shop.getType())) return;
+        if (!buy && p.getInventory().firstEmpty() == -1) {
+            p.sendMessage(ChatColor.RED + "Your inventory is full!");
+            return;
+        }
+        ItemStack item = firstItem(storage);
+        if (item == null) {
+            refused(p, buy ? "§cShop out of stock" : "§cShop has no item set for selling");
+            return;
+        }
+        Inventory sender = buy ? storage : p.getInventory();
+        Inventory receiver = buy ? p.getInventory() : storage;
+        if (!hasEnoughItems(sender, item, shop.getBarterAmount())) {
+            refused(p, buy ? "§cShop out of stock" : "§cYou dont have enough to sell");
+            return;
+        }
+        if (!hasRoomFor(receiver, item, shop.getBarterAmount())) {
+            refused(p, buy ? ChatColor.RED + "Your inventory is full!" : ChatColor.RED + "Shop Storage is full!");
+            return;
+        }
+        item.setAmount(1);
+        ItemStack[] beforeSender = snapshot(sender);
+        ItemStack[] beforeReceiver = snapshot(receiver);
+        ShopTrades.Request request = new ShopTrades.Request(shop.getShopId(), customer.get(), owner.get(),
+                buy ? "buy" : "sell", shop.getBarterAmount(), shop.getPrice().longValue() * 100L, Base64.getEncoder().encodeToString(item.serializeAsBytes()));
+        ShopTrades.Outcome result = trades.trade(request, () -> {
+            // A tax listener can run inside the posting. Recheck before any item mutation.
+            if (!Arrays.equals(beforeSender, sender.getStorageContents())
+                    || !Arrays.equals(beforeReceiver, receiver.getStorageContents())
+                    || !Characters.currentSession(p).map(session -> session.ref().equals(customer.get())).orElse(false))
+                throw new IllegalStateException("Character or inventory changed during payment");
+            exchangeItems(sender, receiver, item, shop.getBarterAmount());
+        });
+        if (result == ShopTrades.Outcome.APPLIED) {
+            p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
+        } else if (result == ShopTrades.Outcome.REFUSED) {
+            refused(p, buy ? "§cCannot afford this!" : "§cThe shop owner lacks money!");
+        } else if (result == ShopTrades.Outcome.WAITING) {
+            refused(p, "§cThe economy is unavailable. Retry this trade when it returns.");
+        } else {
+            refused(p, "§cThis shop has an interrupted trade. Ask staff to review it before trading again.");
+        }
+    }
+
+    private static ItemStack[] snapshot(Inventory inventory) {
+        return Arrays.stream(inventory.getStorageContents()).map(item -> item == null ? null : item.clone())
+                .toArray(ItemStack[]::new);
+    }
+
+    private static void refused(Player player, String message) {
+        player.sendMessage(message);
+        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+    }
+
 	@EventHandler
 	public void breakDoor(BlockBreakEvent e) {
 		Player p = e.getPlayer();
@@ -366,7 +397,9 @@ public class ShopEvents implements Listener{
 
 	private boolean mayBreak(Player p, Location signLoc) {
 		if(p.hasPermission(ADMIN_PERMISSION)) return true;
-		return p.getUniqueId().toString().equals(db.getOwnerFromLoc(signLoc));
+		return ready.getAsBoolean() && Characters.currentSession(p)
+            .map(session -> session.ref().characterId().toString().equals(db.getOwnerCharacterFromLoc(signLoc)))
+            .orElse(false);
 	}
 
 	// Every sign that comes down with the broken block: the block itself, signs held up by anything
@@ -406,7 +439,7 @@ public class ShopEvents implements Listener{
 		for(ItemStack item : i.getStorageContents()) {
 			if(item == null) continue;
 			if(item.getType().equals(Material.AIR)) continue;
-			return new ItemStack(item);
+			return item.clone();
 		}
 		return null;
 	}
@@ -426,22 +459,14 @@ public class ShopEvents implements Listener{
 		return room >= amount;
 	}
 
-	public Boolean hasEnoughItems(Inventory i, ItemStack match, Integer amount) {
-		Integer counter = 0;
-		for(ItemStack item : i.getStorageContents()) {
-			if(item == null) continue;
-			if(item.getType().equals(Material.AIR)) continue;
-			match.setAmount(item.getAmount());
-			if(match.equals(item)) {
-				counter = counter + item.getAmount();
-			}
-		}
-		if(counter >= amount) {
-			return true;
-		}
-		return false;
-	}
-	
+    public Boolean hasEnoughItems(Inventory inventory, ItemStack match, Integer amount) {
+        long count = 0;
+        for (ItemStack item : inventory.getStorageContents()) {
+            if (item != null && item.getType() != Material.AIR && match.isSimilar(item)) count += item.getAmount();
+        }
+        return count >= amount;
+    }
+
 	public void exchangeItems(Inventory sender, Inventory reciever, ItemStack item, Integer amount) {
 		Integer i = -1;
 		for(ItemStack invItem : sender.getStorageContents()) {
@@ -454,7 +479,8 @@ public class ShopEvents implements Listener{
 				if(amount > invItem.getAmount()) {
 					ItemStack recieverItem = new ItemStack(invItem);
 					recieverItem.setAmount(invItem.getAmount());
-					reciever.addItem(recieverItem);
+					if (!reciever.addItem(recieverItem).isEmpty())
+                        throw new IllegalStateException("Inventory rejected part of the delivery");
 					amount = amount - invItem.getAmount();
 					invItem.setAmount(0);
 					sender.setItem(i, null);
@@ -463,7 +489,8 @@ public class ShopEvents implements Listener{
 				if(amount == invItem.getAmount()) {
 					ItemStack recieverItem = new ItemStack(invItem);
 					recieverItem.setAmount(invItem.getAmount());
-					reciever.addItem(recieverItem);
+					if (!reciever.addItem(recieverItem).isEmpty())
+                        throw new IllegalStateException("Inventory rejected part of the delivery");
 					invItem.setAmount(0);
 					sender.setItem(i, null);
 					break;
@@ -471,7 +498,8 @@ public class ShopEvents implements Listener{
 				invItem.setAmount(invItem.getAmount() - amount);
 				ItemStack recieverItem = new ItemStack(invItem);
 				recieverItem.setAmount(amount);
-				reciever.addItem(recieverItem);
+				if (!reciever.addItem(recieverItem).isEmpty())
+                        throw new IllegalStateException("Inventory rejected part of the delivery");
 				break;
 			}
 			continue;

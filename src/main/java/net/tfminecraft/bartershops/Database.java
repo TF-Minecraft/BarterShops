@@ -2,7 +2,6 @@ package net.tfminecraft.bartershops;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -84,7 +83,7 @@ public class Database {
 
     // The data folder only exists once a shop has been saved.
     private File[] shopFiles() {
-        File[] files = dataFolder.listFiles();
+        File[] files = dataFolder.listFiles((folder, name) -> name.endsWith(".json"));
         return files == null ? new File[0] : files;
     }
 
@@ -211,9 +210,7 @@ public class Database {
        Gson g = new GsonBuilder().setPrettyPrinting().create();
        String prettyJsonString = g.toJson(treeMap);
       
-        try (FileWriter fw = new FileWriter(file)) {
-          fw.write(prettyJsonString);
-        }
+        DurableFiles.write(file.toPath(), prettyJsonString);
       
         return true;
       } catch (Exception ex) {

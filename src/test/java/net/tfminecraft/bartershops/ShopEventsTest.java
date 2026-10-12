@@ -67,12 +67,17 @@ import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
 import io.papermc.paper.registry.RegistryAccess;
 import net.tfminecraft.bartershops.sf.ShopEmbargo;
-import net.tfminecraft.denareconomy.DenarEconomy;
-import net.tfminecraft.denareconomy.data.Account;
-import net.tfminecraft.denareconomy.data.PlayerData;
-import net.tfminecraft.denareconomy.enums.Accounts;
-import net.tfminecraft.denareconomy.managers.MoneyManager;
-import net.tfminecraft.denareconomy.managers.PlayerManager;
+import net.tfminecraft.denareconomy.api.Denars;
+import net.tfminecraft.denareconomy.api.Result;
+import net.tfminecraft.tlibs.character.CharacterRef;
+import net.tfminecraft.tlibs.character.CharacterSession;
+import net.tfminecraft.tlibs.character.Characters;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.util.Optional;
+import java.util.logging.Logger;
+import org.junit.jupiter.api.io.TempDir;
+
 
 class ShopEventsTest {
     @SuppressWarnings("deprecation")
@@ -99,6 +104,8 @@ class ShopEventsTest {
         when(location.getBlock()).thenReturn(block);
         when(block.getState()).thenReturn(sign);
         ShopSign shop = new ShopSign();
+        shop.setOwnerAccount(CUSTOMER.toString());
+        shop.setOwnerCharacter(CUSTOMER_CHARACTER.toString());
         shop.setSignLoc(location);
         shop.setType("buy");
         events.currentShop.put(player, shop);
@@ -225,10 +232,13 @@ class ShopEventsTest {
     private Location signLocation;
     private Sign sign;
     private MockedStatic<ShopEmbargo> embargo;
-    private MockedStatic<DenarEconomy> denar;
-    private Account pouch;
-    private Account bank;
-    private MoneyManager money;
+    private MockedStatic<Denars> denar;
+    private MockedStatic<Characters> characters;
+    @TempDir Path tradeDirectory;
+    private static final UUID OWNER_CHARACTER = UUID.fromString("00000000-0000-0000-0000-000000000101");
+    private static final UUID CUSTOMER_CHARACTER = UUID.fromString("00000000-0000-0000-0000-000000000102");
+    private static final CharacterRef OWNER_REF = new CharacterRef(OWNER, OWNER_CHARACTER);
+    private static final CharacterRef CUSTOMER_REF = new CharacterRef(CUSTOMER, CUSTOMER_CHARACTER);
 
     /**
      * Sound constants resolve through Paper's server registry when the interface is first loaded,
@@ -307,23 +317,22 @@ class ShopEventsTest {
         when(block.getRelative(any(BlockFace.class))).thenReturn(air);
         signLines("[Buy]");
         embargo = mockStatic(ShopEmbargo.class);
-        denar = mockStatic(DenarEconomy.class);
-        PlayerManager players = mock(PlayerManager.class);
-        PlayerData customerData = mock(PlayerData.class);
-        PlayerData ownerData = mock(PlayerData.class);
-        pouch = mock(Account.class);
-        bank = mock(Account.class);
-        money = mock(MoneyManager.class);
-        denar.when(DenarEconomy::getPlayerManager).thenReturn(players);
-        denar.when(DenarEconomy::getMoneyManager).thenReturn(money);
-        when(players.get(player)).thenReturn(customerData);
-        when(players.get(OWNER)).thenReturn(ownerData);
-        when(customerData.getPouch()).thenReturn(pouch);
-        when(ownerData.getBank()).thenReturn(bank);
+        embargo.when(ShopEmbargo::ready).thenReturn(true);
+        characters = mockStatic(Characters.class);
+        characters.when(Characters::available).thenReturn(true);
+        characters.when(Characters::legacyHeirsReady).thenReturn(true);
+        characters.when(() -> Characters.currentSession(any(Player.class))).thenReturn(Optional.of(new CharacterSession(CUSTOMER_REF, 1)));
+        denar = mockStatic(Denars.class);
+        denar.when(() -> Denars.pouch(any())).thenAnswer(call -> "char:" + call.<CharacterRef>getArgument(0).characterId() + ":pouch");
+        denar.when(() -> Denars.bank(any())).thenAnswer(call -> "char:" + call.<CharacterRef>getArgument(0).characterId() + ":bank");
+        tradeResult(Result.APPLIED);
+        denar.when(() -> Denars.post(anyString(), anyString(), anyList())).thenReturn(Result.APPLIED);
+        events.trades = new ShopTrades(tradeDirectory, Logger.getAnonymousLogger());
     }
 
     @AfterEach
     void closeStatics() {
+        characters.close();
         denar.close();
         embargo.close();
     }
@@ -351,7 +360,7 @@ class ShopEventsTest {
         assertEquals(1, events.shopCreating.get(player));
         ShopSign shop = events.currentShop.get(player);
         assertEquals(type, shop.getType());
-        assertEquals(CUSTOMER.toString(), shop.getOwner());
+        assertEquals(CUSTOMER.toString(), shop.getOwnerAccount());
         assertEquals(signLocation, shop.getSignLoc());
         verify(player).sendTitle("Shop Creation §e1/4", "§aRight Click on the storage chest with the redstone", 5, 80, 6);
     }
@@ -621,12 +630,10 @@ class ShopEventsTest {
         Inventory storage = storage(tradingShop("buy"));
         ItemStack[] stock = stock(storage, null, new Stack(Material.AIR, 0), new Stack(Material.DIRT, 8));
         List<ItemStack> bought = received(inventory);
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
-        verify(pouch).change(-10.0);
-        verify(money).addMoneyToAccount(OWNER.toString(), 10.0, true, true, Accounts.BANK);
+        verifyTrade("buy");
         assertEquals(new Stack(Material.DIRT, 3), stock[2]);
         assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
         verify(player).playSound(playerLocation, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
@@ -639,7 +646,6 @@ class ShopEventsTest {
         ItemStack[] stock = stock(storage,
             new Stack(Material.DIRT, 3), new Stack(Material.STONE, 2), new Stack(Material.DIRT, 4));
         List<ItemStack> bought = received(inventory);
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -654,7 +660,6 @@ class ShopEventsTest {
         Inventory storage = storage(tradingShop("buy"));
         ItemStack[] stock = stock(storage, new Stack(Material.DIRT, 5), new Stack(Material.DIRT, 5));
         List<ItemStack> bought = received(inventory);
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -666,7 +671,6 @@ class ShopEventsTest {
     @Test
     void buyingNeedsEnoughStock() {
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 4));
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -678,7 +682,6 @@ class ShopEventsTest {
         // Previously the dirt and stone were counted together: the buyer paid for five and got three dirt.
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 3), new Stack(Material.STONE, 2));
         List<ItemStack> bought = received(inventory);
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -689,7 +692,6 @@ class ShopEventsTest {
     @Test
     void emptyChestsAreOutOfStock() {
         stock(storage(tradingShop("buy")), null, new Stack(Material.AIR, 0));
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -701,7 +703,6 @@ class ShopEventsTest {
         // Previously one free slot was enough, and whatever did not fit was lost after payment.
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 5));
         stock(inventory, new Stack(Material.DIRT, 62), new Stack(Material.STONE, 64));
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -713,18 +714,17 @@ class ShopEventsTest {
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 5));
         stock(inventory, new Stack(Material.DIRT, 59), new Stack(Material.STONE, 64));
         List<ItemStack> bought = received(inventory);
-        when(pouch.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
-        verify(pouch).change(-10.0);
+        verifyTrade("buy");
         assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
     }
 
     @Test
     void buyingNeedsEnoughMoney() {
         stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 5));
-        when(pouch.getBal()).thenReturn(9.99);
+        tradeResult(Result.REFUSED);
 
         events.useShop(click(block));
 
@@ -741,12 +741,10 @@ class ShopEventsTest {
         ItemStack[] held = stock(inventory,
             null, new Stack(Material.AIR, 0), new Stack(Material.DIRT, 3), new Stack(Material.STONE, 1),
             new Stack(Material.DIRT, 4));
-        when(bank.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
-        verify(money).changeBal(OWNER.toString(), -10.0, Accounts.BANK);
-        verify(money).addMoney(player, 10.0, false, true);
+        verifyTrade("sell");
         assertNull(held[2]);
         assertEquals(new Stack(Material.STONE, 1), held[3]);
         assertEquals(new Stack(Material.DIRT, 2), held[4]);
@@ -759,7 +757,6 @@ class ShopEventsTest {
     void sellingNeedsRoomInTheChestForTheWholeOrder() {
         stock(storage(tradingShop("sell")), new Stack(Material.DIRT, 62), new Stack(Material.STONE, 64));
         stock(inventory, new Stack(Material.DIRT, 5));
-        when(bank.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -782,7 +779,7 @@ class ShopEventsTest {
     void sellingNeedsTheOwnerToAffordIt() {
         stock(storage(tradingShop("sell")), new Stack(Material.DIRT, 1));
         stock(inventory, new Stack(Material.DIRT, 5));
-        when(bank.getBal()).thenReturn(9.99);
+        tradeResult(Result.REFUSED);
 
         events.useShop(click(block));
 
@@ -792,7 +789,6 @@ class ShopEventsTest {
     @Test
     void sellingNeedsAnItemInTheStorage() {
         stock(storage(tradingShop("sell")), null, new Stack(Material.AIR, 0));
-        when(bank.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -803,7 +799,6 @@ class ShopEventsTest {
     void sellingNeedsEnoughMatchingItems() {
         stock(storage(tradingShop("sell")), new Stack(Material.DIRT, 1));
         stock(inventory, new Stack(Material.DIRT, 4), new Stack(Material.STONE, 5));
-        when(bank.getBal()).thenReturn(10.0);
 
         events.useShop(click(block));
 
@@ -1128,7 +1123,7 @@ class ShopEventsTest {
 
     private void shopOwnedBy(Location location, UUID owner) {
         when(events.db.shopExistsFromLoc(location)).thenReturn(true);
-        when(events.db.getOwnerFromLoc(location)).thenReturn(owner.toString());
+        when(events.db.getOwnerCharacterFromLoc(location)).thenReturn((owner.equals(CUSTOMER) ? CUSTOMER_CHARACTER : OWNER_CHARACTER).toString());
     }
 
     private static BlockDestroyEvent destroyed(Block b) {
@@ -1272,6 +1267,114 @@ class ShopEventsTest {
         assertEquals(List.of(new Stack(Material.DIRT, 3)), moved);
     }
 
+    @Test
+    void anotherCharacterOnTheSameAccountCannotBreakTheShop() {
+        shopOwnedBy(signLocation, CUSTOMER);
+        characters.when(() -> Characters.currentSession(player)).thenReturn(Optional.of(
+                new CharacterSession(new CharacterRef(CUSTOMER, UUID.randomUUID()), 2)));
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+        fire(event);
+        assertTrue(event.isCancelled());
+        verify(events.db, never()).deleteFile(any());
+    }
+
+    @Test
+    void unmigratedShopCannotTradeOrBeBrokenExceptByStaff() {
+        ShopSign shop = tradingShop("buy");
+        shop.setOwnerCharacter(null);
+        events.useShop(click(block));
+        denar.verifyNoInteractions();
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+        fire(event);
+        assertTrue(event.isCancelled());
+        when(player.hasPermission(ShopEvents.ADMIN_PERMISSION)).thenReturn(true);
+        BlockBreakEvent staff = new BlockBreakEvent(block, player);
+        fire(staff);
+        assertFalse(staff.isCancelled());
+    }
+
+    @Test
+    void creationRequiresAnActiveCharacter() {
+        characters.when(() -> Characters.currentSession(player)).thenReturn(Optional.empty());
+        events.createShopEvent(click(block));
+        assertTrue(events.currentShop.isEmpty());
+        assertTrue(events.shopCreating.isEmpty());
+    }
+
+    @Test
+    void switchingCharactersCancelsTheStorageCreationStep() {
+        creatingShop();
+        characters.when(() -> Characters.currentSession(player)).thenReturn(Optional.of(
+                new CharacterSession(new CharacterRef(CUSTOMER, UUID.randomUUID()), 2)));
+        events.createShopEvent(click(chestAt(new Location(world, 1, 64, 0))));
+        assertTrue(events.currentShop.isEmpty());
+        assertTrue(events.shopCreating.isEmpty());
+        verify(events.db, never()).saveShop(any());
+    }
+
+    @Test
+    void unavailablePaymentLeavesItemsUntilTheSameIntentApplies() throws Exception {
+        ItemStack[] stock = stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 10));
+        List<ItemStack> bought = received(inventory);
+        tradeResult(Result.UNAVAILABLE);
+        events.useShop(click(block));
+        assertTrue(bought.isEmpty());
+        assertEquals(10, stock[0].getAmount());
+        Path file = tradeDirectory.resolve("00000000-0000-0000-0000-000000000003.json");
+        String before = Files.readString(file);
+        tradeResult(Result.APPLIED);
+        events.useShop(click(block));
+        assertEquals(5, stock[0].getAmount());
+        assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
+        assertFalse(Files.exists(file));
+        assertTrue(before.contains("prepared"));
+    }
+
+    @Test
+    void changesMadeByPaymentEventsFreezeDeliveryAndCannotReplayIt() throws Exception {
+        ItemStack[] stock = stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 10));
+        List<ItemStack> bought = received(inventory);
+        denar.when(() -> Denars.trade(anyString(), anyString(), anyString(), any(), anyString(), anyLong(), anyBoolean()))
+                .thenAnswer(call -> { stock[0].setAmount(9); return Result.APPLIED; });
+        events.useShop(click(block));
+        events.useShop(click(block));
+        assertTrue(bought.isEmpty());
+        assertEquals(9, stock[0].getAmount());
+        denar.verify(() -> Denars.trade(anyString(), anyString(), anyString(), any(), anyString(), anyLong(), anyBoolean()), times(1));
+    }
+
+    @Test
+    void factionMigrationWaitBlocksPostingUntilTheProviderIsReady() {
+        ItemStack[] stock = stock(storage(tradingShop("buy")), new Stack(Material.DIRT, 10));
+        List<ItemStack> bought = received(inventory);
+        embargo.when(ShopEmbargo::ready).thenReturn(false);
+        events.useShop(click(block));
+        denar.verifyNoInteractions();
+        assertTrue(bought.isEmpty());
+        assertEquals(10, stock[0].getAmount());
+        embargo.when(ShopEmbargo::ready).thenReturn(true);
+        events.useShop(click(block));
+        assertEquals(5, stock[0].getAmount());
+        assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
+        verifyTrade("buy");
+        embargo.when(ShopEmbargo::ready).thenReturn(false);
+        events.useShop(click(block));
+        assertEquals(5, stock[0].getAmount());
+        verifyTrade("buy");
+    }
+
+    @Test
+    void freeShopMovesItemsOnlyAfterItsLedgerPostingApplies() {
+        ShopSign shop = tradingShop("buy");
+        shop.setPrice(0);
+        ItemStack[] stock = stock(storage(shop), new Stack(Material.DIRT, 10));
+        List<ItemStack> bought = received(inventory);
+        events.useShop(click(block));
+        assertEquals(5, stock[0].getAmount());
+        assertEquals(List.of(new Stack(Material.DIRT, 5)), bought);
+        denar.verify(() -> Denars.post(startsWith("shop:"), eq("shop:buy"), anyList()));
+    }
+
     // --- Fixture helpers ---
 
     private void startAt(Integer stage) {
@@ -1305,6 +1408,8 @@ class ShopEventsTest {
 
     private ShopSign creatingShop() {
         ShopSign shop = new ShopSign();
+        shop.setOwnerAccount(CUSTOMER.toString());
+        shop.setOwnerCharacter(CUSTOMER_CHARACTER.toString());
         shop.setSignLoc(signLocation);
         events.shopCreating.put(player, 1);
         events.currentShop.put(player, shop);
@@ -1330,12 +1435,16 @@ class ShopEventsTest {
         when(chest.getInventory()).thenReturn(storage);
         stock(storage);
         ShopSign shop = new ShopSign();
+        shop.setOwnerAccount(CUSTOMER.toString());
+        shop.setOwnerCharacter(CUSTOMER_CHARACTER.toString());
         shop.setSignLoc(signLocation);
         shop.setStorageLoc(storageLocation);
         shop.setType(type);
         shop.setBarterAmount(5);
         shop.setPrice(10);
-        shop.setOwner(OWNER.toString());
+        shop.setOwnerAccount(OWNER.toString());
+        shop.setOwnerCharacter(OWNER_CHARACTER.toString());
+        shop.setShopId("00000000-0000-0000-0000-000000000003");
         when(events.db.shopExistsFromLoc(signLocation)).thenReturn(true);
         when(events.db.getShopFromLoc(signLocation)).thenReturn(shop);
         holding(Material.AIR);
@@ -1366,11 +1475,24 @@ class ShopEventsTest {
         return items;
     }
 
+    private void tradeResult(Result result) {
+        denar.when(() -> Denars.trade(anyString(), anyString(), anyString(), any(), anyString(), anyLong(), anyBoolean()))
+                .thenReturn(result);
+    }
+
+    private void verifyTrade(String direction) {
+        boolean buy = direction.equals("buy");
+        denar.verify(() -> Denars.trade(startsWith("shop:"), eq("shop:" + direction),
+                eq(buy ? "char:" + CUSTOMER_CHARACTER + ":pouch" : "char:" + OWNER_CHARACTER + ":bank"),
+                eq(buy ? OWNER_REF : CUSTOMER_REF),
+                eq(buy ? "char:" + OWNER_CHARACTER + ":bank" : "char:" + CUSTOMER_CHARACTER + ":pouch"), eq(1000L), eq(true)));
+    }
+
     private void assertRefused(String message) {
         verify(player).sendMessage(message);
         verify(player).playSound(playerLocation, Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-        verify(pouch, never()).change(anyDouble());
-        verifyNoInteractions(money);
+        verify(inventory, never()).addItem(any(ItemStack[].class));
+        verify(inventory, never()).setItem(anyInt(), any());
     }
 
     /**
@@ -1424,6 +1546,11 @@ class ShopEventsTest {
         @Override
         public int hashCode() {
             return Objects.hash(type, amount);
+        }
+
+        @Override
+        public byte[] serializeAsBytes() {
+            return (type.name() + ":" + amount).getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
 
         @Override
