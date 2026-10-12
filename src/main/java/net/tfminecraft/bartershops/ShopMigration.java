@@ -29,6 +29,8 @@ final class ShopMigration {
     private final Logger logger;
     private boolean waitingLogged;
     private boolean failed;
+    private List<String> reportedQuarantine;
+    private boolean reportFailureLogged;
 
     ShopMigration(File dataFolder, File migrationFolder, Logger logger) {
         data = dataFolder.toPath();
@@ -62,15 +64,27 @@ final class ShopMigration {
             }
         }
         try {
+            Path report = migrations.resolve(REPORT);
             if (!quarantined.isEmpty()) {
-                DurableFiles.write(migrations.resolve(REPORT), String.join("\n", quarantined) + "\n");
-                quarantined.forEach(message -> logger.warning("Shop remains closed: " + message));
-            } else if (Files.exists(migrations.resolve(REPORT))) {
-                DurableFiles.delete(migrations.resolve(REPORT));
+                // Retries while not ready rerun migration; only a changed list is news.
+                boolean changed = !quarantined.equals(reportedQuarantine);
+                if (changed || !Files.exists(report))
+                    DurableFiles.write(report, String.join("\n", quarantined) + "\n");
+                if (changed) {
+                    reportedQuarantine = List.copyOf(quarantined);
+                    quarantined.forEach(message -> logger.warning("Shop remains closed: " + message));
+                }
+            } else {
+                if (Files.exists(report)) DurableFiles.delete(report);
+                reportedQuarantine = List.of();
             }
+            reportFailureLogged = false;
         } catch (IOException ex) {
             failed = true;
-            logger.severe("Cannot write shop quarantine report: " + ex);
+            if (!reportFailureLogged) {
+                reportFailureLogged = true;
+                logger.severe("Cannot write shop quarantine report: " + ex);
+            }
         }
         return quarantined;
     }
@@ -80,14 +94,26 @@ final class ShopMigration {
         Path manifest = migrations.resolve("character-v1").resolve(file.getFileName());
         Path backup = migrations.resolve("backup").resolve(file.getFileName());
         if (Files.exists(manifest)) {
-            Map<String, Object> previous = read(manifest);
+            Map<String, Object> previous;
+            try {
+                previous = read(manifest);
+            } catch (IOException | RuntimeException ex) {
+                // Only this shop is affected: without its record it stays unmigrated and closed.
+                return "unreadable migration record; retained for staff: " + ex;
+            }
             if ("in-progress".equals(previous.get("state"))) {
                 byte[] original = Files.readAllBytes(backup);
                 if (!hash(original).equals(previous.get("sha256"))) throw new IOException("Backup hash mismatch");
                 DurableFiles.write(file, original);
             }
         }
-        Map<String, Object> shop = read(file);
+        Map<String, Object> shop;
+        try {
+            shop = read(file);
+        } catch (IOException | RuntimeException ex) {
+            // Only this shop is affected: Database cannot load it, so it stays closed on its own.
+            return "unreadable shop; retained for staff: " + ex;
+        }
         if (shop.containsKey(Database.OWNER_CHARACTER)) {
             if (Database.readCharacter(shop.get(Database.OWNER_CHARACTER)) != null
                     && Database.readCharacter(shop.get(Database.OWNER)) != null) return null;

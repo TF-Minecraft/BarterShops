@@ -141,6 +141,38 @@ class ShopMigrationTest {
     }
 
     @Test
+    void oneUnreadableShopIsQuarantinedWithoutClosingEveryShop() throws Exception {
+        Path good = file();
+        Path broken = directory.resolve("Data/broken.json");
+        Files.writeString(broken, "{");
+        try (var characters = mockStatic(Characters.class)) {
+            characters.when(Characters::available).thenReturn(true);
+            characters.when(Characters::legacyHeirsReady).thenReturn(true);
+            characters.when(() -> Characters.legacyHeir(account)).thenReturn(Optional.of(heir));
+            ShopMigration migration = migration();
+            assertTrue(migration.runWhenReady());
+            assertTrue(Files.readString(good).contains(heir.characterId().toString()));
+            assertEquals("{", Files.readString(broken));
+            assertTrue(Files.readString(directory.resolve("migrations/quarantine.txt")).contains("broken.json"));
+            assertTrue(migration.runWhenReady());
+            verify(logger, times(1)).warning(contains("broken.json"));
+        }
+    }
+
+    @Test
+    void unreadableMigrationRecordLeavesItsShopUntouched() throws Exception {
+        Path file = file();
+        String original = Files.readString(file);
+        Path manifest = directory.resolve("migrations/character-v1").resolve(file.getFileName());
+        Files.createDirectories(manifest.getParent());
+        Files.writeString(manifest, "{");
+        assertEquals(1, migration().migrate().size());
+        assertEquals(original, Files.readString(file));
+        assertTrue(Files.readString(directory.resolve("migrations/quarantine.txt"))
+                .contains("unreadable migration record"));
+    }
+
+    @Test
     void invalidCharacterIsFrozenRatherThanAssignedToAnotherCharacter() throws Exception {
         Path file = file();
         String invalid = "{\"owner\":\"" + account + "\",\"owner character\":\"broken\"}";
