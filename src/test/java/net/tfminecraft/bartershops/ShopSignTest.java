@@ -24,7 +24,7 @@ class ShopSignTest {
         shop.setStorageLoc(storage);
         shop.setBarterAmount(16);
         shop.setPrice(40);
-        shop.setOwner("00000000-0000-0000-0000-000000000001");
+        shop.setOwnerAccount("00000000-0000-0000-0000-000000000001");
         shop.setPaymentItem("sword.katana");
         shop.setType("sell");
 
@@ -32,7 +32,7 @@ class ShopSignTest {
         assertSame(storage, shop.getStorageLoc());
         assertEquals(16, shop.getBarterAmount());
         assertEquals(40, shop.getPrice());
-        assertEquals("00000000-0000-0000-0000-000000000001", shop.getOwner());
+        assertEquals("00000000-0000-0000-0000-000000000001", shop.getOwnerAccount());
         assertEquals("sword.katana", shop.getPaymentItemString());
         assertEquals("sell", shop.getType());
     }

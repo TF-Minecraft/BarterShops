@@ -2,7 +2,6 @@ package net.tfminecraft.bartershops;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -22,8 +21,11 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
 
 public class Database {
-	private static final Gson SHOP_READER = new GsonBuilder()
+	static final Gson SHOP_READER = new GsonBuilder()
         .setObjectToNumberStrategy(ToNumberPolicy.BIG_DECIMAL).create();
+	// The owner's account; written before shops belonged to characters, so every shop has it.
+	static final String OWNER = "owner";
+	static final String OWNER_CHARACTER = "owner character";
 	private final File dataFolder;
 
 	public Database() {
@@ -50,7 +52,9 @@ public class Database {
                     shop.setBarterAmount(readInteger(shopJson.get("barter amount")));
                     shop.setPrice(readInteger(shopJson.get("price")));
                     if (!shop.hasValidTerms()) return null;
-                    shop.setOwner((String) shopJson.get("owner"));
+                    shop.setShopId(shopId(file));
+                    shop.setOwnerAccount((String) shopJson.get(OWNER));
+                    shop.setOwnerCharacter(readCharacter(shopJson.get(OWNER_CHARACTER)));
                     shop.setPaymentItem((String) shopJson.get("payment item"));
                     shop.setType((String) shopJson.get("type"));
     				return shop;
@@ -62,9 +66,24 @@ public class Database {
     	return null;
     }
 
+    static String shopId(File file) {
+        String name = file.getName();
+        return name.endsWith(".json") ? name.substring(0, name.length() - 5) : name;
+    }
+
+    // Only a well-formed character ID owns a shop; anything else leaves it closed.
+    static String readCharacter(Object value) {
+        if (!(value instanceof String text)) return null;
+        try {
+            return UUID.fromString(text).toString();
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
     // The data folder only exists once a shop has been saved.
     private File[] shopFiles() {
-        File[] files = dataFolder.listFiles();
+        File[] files = dataFolder.listFiles((folder, name) -> name.endsWith(".json"));
         return files == null ? new File[0] : files;
     }
 
@@ -95,14 +114,15 @@ public class Database {
     	return false;
     }
 	
-	public String getOwnerFromLoc(Location loc) {
+	/** The character owning the shop at the sign, or null when it has none yet. */
+	public String getOwnerCharacterFromLoc(Location loc) {
     	for (final File file : shopFiles()) {
             if (!file.isDirectory()) {
             	try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8")) {
     				JSONObject shopJson = (JSONObject) parser.parse(reader);
     				Location fileLoc = new Location(Bukkit.getServer().getWorld((String) shopJson.get("sign world")), ((Number) shopJson.get("sign xPos")).doubleValue(),((Number) shopJson.get("sign yPos")).doubleValue(),((Number) shopJson.get("sign zPos")).doubleValue());
     				if(!loc.equals(fileLoc)) continue;
-    				return (String) shopJson.get("owner");
+    				return readCharacter(shopJson.get(OWNER_CHARACTER));
     			} catch (Exception ex) {
     				ex.printStackTrace();
     			}
@@ -143,7 +163,8 @@ public class Database {
             	defaults.put("barter amount", shop.getBarterAmount());
             	defaults.put("price", shop.getPrice());
             	defaults.put("payment item", shop.getPaymentItemString());
-            	defaults.put("owner", shop.getOwner());
+            	defaults.put(OWNER, shop.getOwnerAccount());
+            	defaults.put(OWNER_CHARACTER, shop.getOwnerCharacter());
             	defaults.put("type", shop.getType());
             	dataFolder.mkdirs();
     			UUID uuid = UUID. randomUUID();
@@ -156,7 +177,8 @@ public class Database {
     			}
             	// A new shop has no stored values, so save() writes the defaults above.
             	json = new JSONObject();
-            	if(!save(file, defaults)) file.delete();
+            	if(save(file, defaults)) shop.setShopId(uuidAsString);
+            	else file.delete();
             } catch (Throwable ex) {
 				ex.printStackTrace();
             }
@@ -188,9 +210,7 @@ public class Database {
        Gson g = new GsonBuilder().setPrettyPrinting().create();
        String prettyJsonString = g.toJson(treeMap);
       
-        try (FileWriter fw = new FileWriter(file)) {
-          fw.write(prettyJsonString);
-        }
+        DurableFiles.write(file.toPath(), prettyJsonString);
       
         return true;
       } catch (Exception ex) {

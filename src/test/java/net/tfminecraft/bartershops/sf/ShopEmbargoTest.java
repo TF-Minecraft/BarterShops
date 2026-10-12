@@ -8,7 +8,10 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
+import net.tfminecraft.tlibs.character.Characters;
+import net.tfminecraft.tlibs.character.CharacterRef;
+import net.tfminecraft.tlibs.character.CharacterSession;
+import java.util.Optional;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
@@ -22,6 +25,7 @@ import org.mockito.MockedStatic;
 
 import net.tfminecraft.bartershops.ShopMain;
 import net.tfminecraft.bartershops.ShopSign;
+import net.tfminecraft.simplefactions.api.SimpleFactionsApi;
 import net.tfminecraft.simplefactions.managers.FactionManager;
 import net.tfminecraft.simplefactions.managers.RelationManager;
 import net.tfminecraft.simplefactions.objects.Faction;
@@ -31,11 +35,14 @@ class ShopEmbargoTest {
 
     private MockedStatic<Bukkit> bukkit;
     private MockedStatic<FactionManager> factions;
+    private MockedStatic<SimpleFactionsApi> api;
     private MockedStatic<RelationManager> relations;
     private PluginManager plugins;
     private Plugin simpleFactions;
     private Player customer;
-    private OfflinePlayer owner;
+    private MockedStatic<Characters> characters;
+    private static final String CUSTOMER_CHARACTER = "00000000-0000-0000-0000-000000000102";
+    private static final String OWNER_CHARACTER = "00000000-0000-0000-0000-000000000101";
     private Faction customerFaction;
     private Faction ownerFaction;
     private ShopSign shop;
@@ -47,28 +54,33 @@ class ShopEmbargoTest {
         previousPlugin = ShopMain.plugin;
         bukkit = mockStatic(Bukkit.class);
         factions = mockStatic(FactionManager.class);
+        api = mockStatic(SimpleFactionsApi.class);
+        api.when(SimpleFactionsApi::ready).thenReturn(true);
         relations = mockStatic(RelationManager.class);
         plugins = mock(PluginManager.class);
         simpleFactions = mock(Plugin.class);
         customer = mock(Player.class);
-        owner = mock(OfflinePlayer.class);
+        characters = mockStatic(Characters.class);
+        characters.when(() -> Characters.currentSession(customer)).thenReturn(Optional.of(
+                new CharacterSession(new CharacterRef(UUID.randomUUID(), UUID.fromString(CUSTOMER_CHARACTER)), 1)));
         customerFaction = mock(Faction.class);
         ownerFaction = mock(Faction.class);
         bukkit.when(Bukkit::getPluginManager).thenReturn(plugins);
-        bukkit.when(() -> Bukkit.getOfflinePlayer(OWNER)).thenReturn(owner);
         when(plugins.getPlugin("SimpleFactions")).thenReturn(simpleFactions);
         when(simpleFactions.isEnabled()).thenReturn(true);
         when(customer.getName()).thenReturn("Customer");
-        when(owner.getName()).thenReturn("Owner");
-        factions.when(() -> FactionManager.getByMember("Customer")).thenReturn(customerFaction);
-        factions.when(() -> FactionManager.getByMember("Owner")).thenReturn(ownerFaction);
+        factions.when(() -> FactionManager.getByMember(CUSTOMER_CHARACTER)).thenReturn(customerFaction);
+        factions.when(() -> FactionManager.getByMember(OWNER_CHARACTER)).thenReturn(ownerFaction);
         shop = new ShopSign();
-        shop.setOwner(OWNER.toString());
+        shop.setOwnerAccount(OWNER.toString());
+        shop.setOwnerCharacter(OWNER_CHARACTER);
     }
 
     @AfterEach
     void tearDown() throws Exception {
+        characters.close();
         relations.close();
+        api.close();
         factions.close();
         bukkit.close();
         ShopMain.plugin = previousPlugin;
@@ -102,15 +114,16 @@ class ShopEmbargoTest {
     }
 
     @Test
-    void disabledSimpleFactionsIsNeverBlocked() {
+    void disabledSimpleFactionsBlocksTrades() {
         when(simpleFactions.isEnabled()).thenReturn(false);
-        assertFalse(ShopEmbargo.blocked(customer, shop));
+        assertFalse(ShopEmbargo.ready());
+        assertTrue(ShopEmbargo.blocked(customer, shop));
         factions.verifyNoInteractions();
     }
 
     @Test
     void customerWithoutANationIsNeverBlocked() {
-        factions.when(() -> FactionManager.getByMember("Customer")).thenReturn(null);
+        factions.when(() -> FactionManager.getByMember(CUSTOMER_CHARACTER)).thenReturn(null);
         assertFalse(ShopEmbargo.blocked(customer, shop));
         relations.verifyNoInteractions();
     }
@@ -119,7 +132,7 @@ class ShopEmbargoTest {
     @NullSource
     @ValueSource(strings = {"", "   ", "not-a-uuid"})
     void unusableOwnerIdIsNeverBlocked(String ownerId) {
-        shop.setOwner(ownerId);
+        shop.setOwnerCharacter(ownerId);
         assertFalse(ShopEmbargo.blocked(customer, shop));
         relations.verifyNoInteractions();
     }
@@ -127,21 +140,21 @@ class ShopEmbargoTest {
     @ParameterizedTest
     @NullSource
     @ValueSource(strings = {"", "   "})
-    void ownerWithoutAKnownNameIsNeverBlocked(String name) {
-        when(owner.getName()).thenReturn(name);
+    void customerWithoutAnActiveCharacterIsNeverBlocked(String name) {
+        characters.when(() -> Characters.currentSession(customer)).thenReturn(Optional.empty());
         assertFalse(ShopEmbargo.blocked(customer, shop));
         relations.verifyNoInteractions();
     }
 
     @Test
     void ownerWithoutANationIsNeverBlocked() {
-        factions.when(() -> FactionManager.getByMember("Owner")).thenReturn(null);
+        factions.when(() -> FactionManager.getByMember(OWNER_CHARACTER)).thenReturn(null);
         assertFalse(ShopEmbargo.blocked(customer, shop));
         relations.verifyNoInteractions();
     }
 
     @Test
-    void simpleFactionsFailuresAllowTheTradeAndWarnOnce() {
+    void simpleFactionsFailuresBlockTheTradeAndWarnOnce() {
         ShopMain plugin = mock(ShopMain.class);
         Logger logger = mock(Logger.class);
         when(plugin.getLogger()).thenReturn(logger);
@@ -150,10 +163,10 @@ class ShopEmbargoTest {
             .thenThrow(new IllegalStateException("relations not loaded"))
             .thenThrow(new NoClassDefFoundError("RelationManager"));
 
-        assertFalse(ShopEmbargo.blocked(customer, shop));
-        assertFalse(ShopEmbargo.blocked(customer, shop));
+        assertTrue(ShopEmbargo.blocked(customer, shop));
+        assertTrue(ShopEmbargo.blocked(customer, shop));
 
-        verify(logger, times(1)).warning("[BarterShops] SimpleFactions embargo skipped: relations not loaded");
+        verify(logger, times(1)).warning("[BarterShops] SimpleFactions trade blocked: relations not loaded");
     }
 
     @Test
@@ -162,9 +175,34 @@ class ShopEmbargoTest {
         relations.when(() -> RelationManager.hasTradeEmbargo(ownerFaction, customerFaction))
             .thenThrow(new IllegalStateException("relations not loaded"));
 
-        assertFalse(ShopEmbargo.blocked(customer, shop));
+        assertTrue(ShopEmbargo.blocked(customer, shop));
 
         assertFalse(loggedFail().getBoolean(null));
+    }
+
+    @Test
+    void waitingForMigrationBlocksBeforeAnyFactionLookup() {
+        api.when(SimpleFactionsApi::ready).thenReturn(false);
+        assertFalse(ShopEmbargo.ready());
+        assertTrue(ShopEmbargo.blocked(customer, shop));
+        factions.verifyNoInteractions();
+        api.when(SimpleFactionsApi::ready).thenReturn(true);
+        assertTrue(ShopEmbargo.ready());
+    }
+
+    @Test
+    void missingOptionalPluginIsReady() {
+        when(plugins.getPlugin("SimpleFactions")).thenReturn(null);
+        assertTrue(ShopEmbargo.ready());
+        api.verifyNoInteractions();
+    }
+
+    @Test
+    void readinessFailureClosesTrades() {
+        api.when(SimpleFactionsApi::ready).thenThrow(new IllegalStateException("not ready"));
+        assertFalse(ShopEmbargo.ready());
+        assertTrue(ShopEmbargo.blocked(customer, shop));
+        factions.verifyNoInteractions();
     }
 
     private static Field loggedFail() throws Exception {
