@@ -7,7 +7,13 @@ author: Drefvelin
 depend: [MMOItems, MythicLib, DenarEconomy, TLibs]
 softdepend: [SimpleFactions]
 
+commands:
+  bartershops:
+    description: Inspect and clear a shop's unfinished trade.
+    usage: /bartershops intent <shopId> [clear [--confirm]]
+    permission: bartershops.admin
+
 permissions:
   bartershops.admin:
-    description: Break shops owned by other players.
+    description: Break shops owned by other players and clear unfinished trades.
     default: op

@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 import java.nio.file.Path;
 import java.util.logging.Logger;
 import org.bukkit.Server;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,8 @@ class ShopMainTest {
         when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
         when(server.getPluginManager()).thenReturn(plugins);
         when(server.getScheduler()).thenReturn(scheduler);
+        PluginCommand command = mock(PluginCommand.class);
+        when(plugin.getCommand("bartershops")).thenReturn(command);
         plugin.events = new ShopEvents();
         doCallRealMethod().when(plugin).onEnable();
         ShopMain previous = ShopMain.plugin;
@@ -39,6 +42,8 @@ class ShopMainTest {
             characters.when(Characters::legacyHeirsReady).thenReturn(true);
             task.getValue().run();
             assertTrue(plugin.events.ready.getAsBoolean());
+            verify(command).setExecutor(any(IntentCommand.class));
+            verify(command).setTabCompleter(any(IntentCommand.class));
         } finally {
             ShopMain.plugin = previous;
         }

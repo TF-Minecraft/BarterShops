@@ -1,6 +1,7 @@
 package net.tfminecraft.bartershops;
 
 import java.io.File;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class ShopMain extends JavaPlugin {
@@ -21,5 +22,12 @@ public class ShopMain extends JavaPlugin {
             if (!ready) ready = migration.runWhenReady();
         }, 100L, 100L);
         getServer().getPluginManager().registerEvents(events, this);
+        PluginCommand command = getCommand("bartershops");
+        if (command != null) {
+            IntentCommand intents = new IntentCommand(events.trades,
+                    getDataFolder().toPath().resolve("logs").resolve("staff-audit.log"), getLogger());
+            command.setExecutor(intents);
+            command.setTabCompleter(intents);
+        }
     }
 }
