@@ -13,6 +13,7 @@ public class ShopMain extends JavaPlugin {
     public void onEnable() {
         plugin = this;
         events.db = new Database(new File(getDataFolder(), "Data"));
+        events.db.logger = getLogger();
         events.trades = new ShopTrades(getDataFolder().toPath().resolve("trades"), getLogger());
         events.ready = () -> ready;
         ShopMigration migration = new ShopMigration(new File(getDataFolder(), "Data"),

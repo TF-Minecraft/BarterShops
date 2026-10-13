@@ -105,15 +105,20 @@ final class ShopEstate implements EstateParticipant {
         if (!ready.getAsBoolean()) return;
         List<Database.ShopRecord> shops = db.shops();
         for (EstateDecision decision : decided.get()) {
-            if (!guard.test(decision)) continue;
-            Outcome outcome = settle(decision, shops);
-            Map.Entry<Long, Outcome> last = Map.entry(decision.revision(), outcome);
-            if (last.equals(reported.get(decision.deathId()))) continue;
-            if (reporter.report(decision.deathId(), ID, decision.revision(), outcome)) {
-                reported.put(decision.deathId(), last);
+            // One estate failing must not stop the others until the next hour.
+            try {
+                if (!guard.test(decision)) continue;
+                Outcome outcome = settle(decision, shops);
+                Map.Entry<Long, Outcome> last = Map.entry(decision.revision(), outcome);
+                if (last.equals(reported.get(decision.deathId()))) continue;
+                if (reporter.report(decision.deathId(), ID, decision.revision(), outcome)) {
+                    reported.put(decision.deathId(), last);
+                }
+                // A recipient may also be a later testator, so read the shops again after a move.
+                if (outcome instanceof Outcome.Done done && !done.movedIds().isEmpty()) shops = db.shops();
+            } catch (RuntimeException ex) {
+                logger.warning("Could not reconcile the shops of estate " + decision.deathId() + ": " + ex);
             }
-            // A recipient may also be a later testator, so read the shops again after a move.
-            if (outcome instanceof Outcome.Done done && !done.movedIds().isEmpty()) shops = db.shops();
         }
     }
 }

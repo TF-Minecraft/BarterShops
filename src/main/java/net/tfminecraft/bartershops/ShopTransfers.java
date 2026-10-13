@@ -58,8 +58,7 @@ final class ShopTransfers {
      * Shops with an unfinished trade stay where they are and are returned as blocked.
      */
     Result move(UUID deathId, UUID testator, CharacterRef to, Collection<String> owned) throws IOException {
-        Journal journal = read(deathId);
-        if (journal.testator() == null) journal = new Journal(deathId.toString(), testator.toString(), journal.shops());
+        Journal journal = read(deathId, testator);
         Map<String, Entry> shops = journal.shops();
         List<String> blocked = new ArrayList<>();
         Entry planned = new Entry(to.ownerId().toString(), to.characterId().toString(), PLANNED);
@@ -78,6 +77,11 @@ final class ShopTransfers {
             for (Map.Entry<String, Entry> shop : shops.entrySet()) {
                 Entry entry = shop.getValue();
                 if (!PLANNED.equals(entry.state())) continue;
+                // A shop never moves with an unfinished trade, even one planned before.
+                if (blockedByTrade(shop.getKey())) {
+                    if (!blocked.contains(shop.getKey())) blocked.add(shop.getKey());
+                    continue;
+                }
                 Optional<String> owner = db.ownerCharacter(shop.getKey());
                 String state = SUPERSEDED;
                 if (owner.equals(Optional.of(testator.toString()))) {
@@ -105,12 +109,15 @@ final class ShopTransfers {
         }
     }
 
-    private Journal read(UUID deathId) throws IOException {
+    private Journal read(UUID deathId, UUID testator) throws IOException {
         Path file = file(deathId);
-        if (!Files.exists(file)) return new Journal(deathId.toString(), null, new LinkedHashMap<>());
+        if (!Files.exists(file)) return new Journal(deathId.toString(), testator.toString(), new LinkedHashMap<>());
         try {
             Journal journal = JSON.fromJson(Files.readString(file), Journal.class);
             if (journal == null || journal.shops() == null) throw new IOException("Incomplete estate journal " + file);
+            // A journal copied from another death must not add its shops to this estate.
+            if (!deathId.toString().equals(journal.deathId()) || !testator.toString().equals(journal.testator()))
+                throw new IOException("Estate journal " + file + " belongs to another death");
             return new Journal(journal.deathId(), journal.testator(), new LinkedHashMap<>(journal.shops()));
         } catch (JsonParseException ex) {
             throw new IOException("Unreadable estate journal " + file, ex);

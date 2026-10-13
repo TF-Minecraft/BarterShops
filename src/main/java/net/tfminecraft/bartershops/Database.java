@@ -7,11 +7,14 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -33,6 +36,9 @@ public class Database {
 	static final String OWNER = "owner";
 	static final String OWNER_CHARACTER = "owner character";
 	private final File dataFolder;
+	Logger logger = Logger.getLogger("BarterShops");
+	// Unreadable shop files already reported, so the hourly estate pass warns once per file.
+	private final Set<String> unreadable = new HashSet<>();
 
 	public Database() {
 		this(new File("plugins/BarterShops/Data"));
@@ -105,7 +111,8 @@ public class Database {
                     shopJson.get("type") instanceof String type ? type : null, String.valueOf(shopJson.get("sign world")),
                     number(shopJson.get("sign xPos")), number(shopJson.get("sign yPos")), number(shopJson.get("sign zPos"))));
             } catch (IOException ex) {
-                ex.printStackTrace();
+                if (unreadable.add(file.getName()))
+                    logger.warning("Skipping unreadable shop file " + file.getName() + ": " + ex.getMessage());
             }
         }
         return shops;

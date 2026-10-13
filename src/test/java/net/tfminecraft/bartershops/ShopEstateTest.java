@@ -95,8 +95,14 @@ class ShopEstateTest {
         String id = shop(TESTATOR, "sell", -3.2);
         Files.writeString(data.resolve(UUID.randomUUID() + ".json"), "{ not json");
         Files.writeString(data.resolve(UUID.randomUUID() + ".json"), "");
+        Logger logger = mock(Logger.class);
+        db.logger = logger;
 
         List<Database.ShopRecord> shops = db.shops();
+        db.shops();
+
+        // Each unreadable file is reported once, through the plugin logger.
+        verify(logger, times(2)).warning(startsWith("Skipping unreadable shop file "));
 
         assertEquals(1, shops.size());
         assertEquals(id, shops.get(0).shopId());
@@ -209,6 +215,63 @@ class ShopEstateTest {
         Outcome.Done done = assertInstanceOf(Outcome.Done.class, estate.settle(decision(Recipient.character(HEIR), 0)));
         assertEquals(Map.of("shops", 2), done.counts());
         assertEquals(java.util.Set.of(stuck, free), java.util.Set.copyOf(done.movedIds()));
+    }
+
+    @Test
+    void aPlannedShopThatGainedAnUnfinishedTradeIsBlockedNotMoved() throws Exception {
+        String id = shop(TESTATOR, "buy", 1);
+        Path journal = directory.resolve("estates").resolve(DEATH + ".json");
+        Files.createDirectories(journal.getParent());
+        Files.writeString(journal, new Gson().toJson(new ShopTransfers.Journal(DEATH.toString(),
+                TESTATOR.characterId().toString(), Map.of(id, new ShopTransfers.Entry(HEIR.ownerId().toString(),
+                        HEIR.characterId().toString(), ShopTransfers.PLANNED)))));
+        Files.createDirectories(tradesDirectory);
+        Files.writeString(tradesDirectory.resolve(id + ".json"), "{}");
+
+        ShopTransfers.Result result = transfers.move(DEATH, TESTATOR.characterId(), HEIR, List.of());
+
+        assertEquals(List.of(id), result.blocked());
+        assertEquals(List.of(), result.moved());
+        assertEquals(Optional.of(TESTATOR.characterId().toString()), db.ownerCharacter(id));
+        assertTrue(Files.readString(journal).contains(ShopTransfers.PLANNED));
+    }
+
+    @Test
+    void aJournalFromAnotherDeathIsRefused() throws Exception {
+        String mine = shop(TESTATOR, "buy", 1);
+        String theirs = shop(OTHER, "buy", 2);
+        Path journal = directory.resolve("estates").resolve(DEATH + ".json");
+        Files.createDirectories(journal.getParent());
+        ShopTransfers.Entry planned = new ShopTransfers.Entry(HEIR.ownerId().toString(), HEIR.characterId().toString(),
+                ShopTransfers.PLANNED);
+        Files.writeString(journal, new Gson().toJson(new ShopTransfers.Journal(UUID.randomUUID().toString(),
+                TESTATOR.characterId().toString(), Map.of(theirs, planned))));
+        assertEquals(Outcome.Kind.RETRY, estate.settle(decision(Recipient.character(HEIR), 0)).kind());
+        Files.writeString(journal, new Gson().toJson(new ShopTransfers.Journal(DEATH.toString(),
+                OTHER.characterId().toString(), Map.of(theirs, planned))));
+        assertEquals(Outcome.Kind.RETRY, estate.settle(decision(Recipient.character(HEIR), 0)).kind());
+        assertEquals(Optional.of(TESTATOR.characterId().toString()), db.ownerCharacter(mine));
+        assertEquals(Optional.of(OTHER.characterId().toString()), db.ownerCharacter(theirs));
+    }
+
+    @Test
+    void oneFailingEstateDoesNotStopTheReconcileOfTheOthers() throws Exception {
+        String id = shop(TESTATOR, "buy", 1);
+        EstateDecision broken = new EstateDecision(UUID.randomUUID(), OTHER, Optional.empty(), Instant.EPOCH,
+                Optional.empty(), Optional.empty(), Optional.empty(), Recipient.FROZEN, Recipient.FROZEN,
+                Recipient.FROZEN, Recipient.SENDER, 0);
+        estate.guard = decision -> {
+            if (decision == broken) throw new IllegalStateException("service failed");
+            return true;
+        };
+        estate.decided = () -> List.of(broken, decision(Recipient.character(HEIR), 0));
+        List<UUID> reported = new ArrayList<>();
+        estate.reporter = (death, participant, revision, outcome) -> reported.add(death);
+
+        estate.reconcile();
+
+        assertEquals(List.of(DEATH), reported);
+        assertEquals(Optional.of(HEIR.characterId().toString()), db.ownerCharacter(id));
     }
 
     @Test
