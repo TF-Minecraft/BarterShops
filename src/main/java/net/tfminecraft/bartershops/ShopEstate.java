@@ -50,13 +50,17 @@ final class ShopEstate implements EstateParticipant {
         this.logger = logger;
     }
 
-    /** Registers the participant and runs the reconcile on the first tick, then hourly. */
-    static void start(Plugin plugin, Database db, ShopTrades trades, BooleanSupplier ready) {
+    /**
+     * Registers the participant and runs the reconcile on the first tick, then hourly. Returns the
+     * reconcile, for the caller to run once shops become ready.
+     */
+    static Runnable start(Plugin plugin, Database db, ShopTrades trades, BooleanSupplier ready) {
         ShopEstate estate = new ShopEstate(db,
                 new ShopTransfers(db, trades, plugin.getDataFolder().toPath().resolve("estates")), ready,
                 plugin.getLogger());
         plugin.getServer().getServicesManager().register(EstateParticipant.class, estate, plugin, ServicePriority.Normal);
         plugin.getServer().getScheduler().runTaskTimer(plugin, estate::reconcile, 1L, HOUR_TICKS);
+        return estate::reconcile;
     }
 
     @Override

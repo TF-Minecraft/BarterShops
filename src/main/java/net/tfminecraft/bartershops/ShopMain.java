@@ -8,6 +8,8 @@ public class ShopMain extends JavaPlugin {
     public static ShopMain plugin;
     ShopEvents events = new ShopEvents();
     private boolean ready;
+    // Runs once when shops become ready, so estates decided during startup need not wait an hour.
+    private Runnable onReady = () -> {};
 
     @Override
     public void onEnable() {
@@ -20,7 +22,14 @@ public class ShopMain extends JavaPlugin {
                 new File(getDataFolder(), "migrations"), getLogger());
         ready = migration.runWhenReady();
         getServer().getScheduler().runTaskTimer(this, () -> {
-            if (!ready) ready = migration.runWhenReady();
+            if (ready) return;
+            ready = migration.runWhenReady();
+            if (!ready) return;
+            try {
+                onReady.run();
+            } catch (RuntimeException ex) {
+                getLogger().warning("Could not reconcile shop estates once shops were ready: " + ex);
+            }
         }, 100L, 100L);
         getServer().getPluginManager().registerEvents(events, this);
         PluginCommand command = getCommand("bartershops");
@@ -31,7 +40,7 @@ public class ShopMain extends JavaPlugin {
             command.setTabCompleter(intents);
         }
         if (EstateProbe.available(EstateProbe.CLASSES)) {
-            ShopEstate.start(this, events.db, events.trades, () -> ready);
+            onReady = ShopEstate.start(this, events.db, events.trades, () -> ready);
         } else {
             getLogger().warning("TLibs has no estate API (2.6.0 or later); shops of dead characters stay with them.");
         }

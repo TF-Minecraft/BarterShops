@@ -55,4 +55,47 @@ class ShopMainTest {
             ShopMain.plugin = previous;
         }
     }
+
+    @Test
+    void estatesReconcileAsSoonAsShopsBecomeReadyNotAnHourLater() {
+        ShopMain plugin = mock(ShopMain.class);
+        Server server = mock(Server.class);
+        BukkitScheduler scheduler = mock(BukkitScheduler.class);
+        Logger logger = mock(Logger.class);
+        when(plugin.getServer()).thenReturn(server);
+        when(plugin.getDataFolder()).thenReturn(directory.toFile());
+        when(plugin.getLogger()).thenReturn(logger);
+        when(server.getPluginManager()).thenReturn(mock(PluginManager.class));
+        when(server.getScheduler()).thenReturn(scheduler);
+        plugin.events = new ShopEvents();
+        doCallRealMethod().when(plugin).onEnable();
+        ShopMain previous = ShopMain.plugin;
+        java.util.concurrent.atomic.AtomicInteger reconciles = new java.util.concurrent.atomic.AtomicInteger();
+        try (var characters = mockStatic(Characters.class); var estates = mockStatic(ShopEstate.class)) {
+            estates.when(() -> ShopEstate.start(any(), any(), any(), any())).thenReturn((Runnable) () -> {
+                if (reconciles.incrementAndGet() == 1) throw new IllegalStateException("estate service failed");
+            });
+            plugin.onEnable();
+            var poll = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+            verify(scheduler).runTaskTimer(eq(plugin), poll.capture(), eq(100L), eq(100L));
+
+            // Still waiting for heirs: no reconcile yet.
+            poll.getValue().run();
+            assertEquals(0, reconciles.get());
+
+            // The poll that finds shops ready reconciles at once; a failure is logged, shops stay ready.
+            characters.when(Characters::available).thenReturn(true);
+            characters.when(Characters::legacyHeirsReady).thenReturn(true);
+            poll.getValue().run();
+            assertEquals(1, reconciles.get());
+            assertTrue(plugin.events.ready.getAsBoolean());
+            verify(logger).warning(startsWith("Could not reconcile shop estates once shops were ready"));
+
+            // Later polls leave it to the hourly reconcile.
+            poll.getValue().run();
+            assertEquals(1, reconciles.get());
+        } finally {
+            ShopMain.plugin = previous;
+        }
+    }
 }
