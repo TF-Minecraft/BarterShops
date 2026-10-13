@@ -42,7 +42,9 @@ import org.bukkit.inventory.ItemStack;
 
 import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 
+import net.tfminecraft.tlibs.character.CharacterInfo;
 import net.tfminecraft.tlibs.character.CharacterRef;
+import net.tfminecraft.tlibs.character.CharacterStatus;
 import net.tfminecraft.tlibs.character.Characters;
 import net.tfminecraft.bartershops.sf.ShopEmbargo;
 
@@ -257,6 +259,13 @@ public class ShopEvents implements Listener{
         Optional<CharacterRef> owner = shop.getOwnerRef();
         if (!ready.getAsBoolean() || customer.isEmpty() || owner.isEmpty()) {
             p.sendMessage("§cThis shop is closed until its owner and your active character are available.");
+            return;
+        }
+        // A dead owner's shop waits for the estate to give it on; both directions stay closed.
+        Optional<CharacterStatus> ownerStatus = Characters.info(owner.get().characterId()).map(CharacterInfo::status);
+        if (ownerStatus.isEmpty() || ownerStatus.get() != CharacterStatus.ALIVE) {
+            refused(p, ownerStatus.isPresent() ? "§cThis shop's owner has died."
+                    : "§cThis shop is closed until its owner and your active character are available.");
             return;
         }
         if (!ShopEmbargo.ready()) {

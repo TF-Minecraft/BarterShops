@@ -14,7 +14,7 @@
         <maven.compiler.proc>full</maven.compiler.proc>
         <denareconomy.version>0.3.0</denareconomy.version>
         <simplefactions.version>4.0.0</simplefactions.version>
-        <tlibs.version>2.4.0</tlibs.version>
+        <tlibs.version>2.6.0</tlibs.version>
     </properties>
 
     <dependencies>
