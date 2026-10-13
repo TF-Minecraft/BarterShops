@@ -29,5 +29,10 @@ public class ShopMain extends JavaPlugin {
             command.setExecutor(intents);
             command.setTabCompleter(intents);
         }
+        if (EstateProbe.available(EstateProbe.CLASSES)) {
+            ShopEstate.start(this, events.db, events.trades, () -> ready);
+        } else {
+            getLogger().warning("TLibs has no estate API (2.6.0 or later); shops of dead characters stay with them.");
+        }
     }
 }

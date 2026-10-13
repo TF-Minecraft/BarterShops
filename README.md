@@ -11,6 +11,7 @@ BarterShops turns a sign and a stocked chest into a place to trade. Players can 
 - **Owner-set trades** — choose the quantity and price for each transaction through an in-game creation flow.
 - **Denar payments** — connect customer spending and shop-owner bank balances through DenarEconomy.
 - **Diplomatic consequences** — respect trade embargoes between nations when SimpleFactions is available.
+- **Shops pass on at death** — a dead owner's shop closes, then passes with the estate to the will heir or the guild leader.
 
 ## Part of the economy
 
@@ -27,7 +28,8 @@ Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/
 With Java 21 and the [build dependencies](https://github.com/TF-Minecraft/Docs/blob/main/projects/BarterShops/README.md#build-and-dependencies) prepared,
 run `mvn clean verify`.
 
-JUnit 5 and Mockito cover sign creation, trades, storage and embargo handling.
+JUnit 5 and Mockito cover sign creation, trades, storage, embargo handling,
+estate transfers and the staff trade command.
 Surefire writes results to `target/surefire-reports/`, which the Build workflow
 uploads. No coverage report or threshold is configured. The suite runs without
 a live Minecraft server or the real economy and faction plugins.

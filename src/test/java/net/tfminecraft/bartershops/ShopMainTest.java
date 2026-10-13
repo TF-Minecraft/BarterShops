@@ -7,10 +7,13 @@ import java.util.logging.Logger;
 import org.bukkit.Server;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
+import org.bukkit.plugin.ServicePriority;
+import org.bukkit.plugin.ServicesManager;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import net.tfminecraft.tlibs.character.Characters;
+import net.tfminecraft.tlibs.character.estate.EstateParticipant;
 
 class ShopMainTest {
     @TempDir Path directory;
@@ -26,6 +29,8 @@ class ShopMainTest {
         when(plugin.getLogger()).thenReturn(Logger.getAnonymousLogger());
         when(server.getPluginManager()).thenReturn(plugins);
         when(server.getScheduler()).thenReturn(scheduler);
+        ServicesManager services = mock(ServicesManager.class);
+        when(server.getServicesManager()).thenReturn(services);
         PluginCommand command = mock(PluginCommand.class);
         when(plugin.getCommand("bartershops")).thenReturn(command);
         plugin.events = new ShopEvents();
@@ -44,6 +49,8 @@ class ShopMainTest {
             assertTrue(plugin.events.ready.getAsBoolean());
             verify(command).setExecutor(any(IntentCommand.class));
             verify(command).setTabCompleter(any(IntentCommand.class));
+            verify(services).register(eq(EstateParticipant.class), any(ShopEstate.class), eq(plugin), eq(ServicePriority.Normal));
+            verify(scheduler).runTaskTimer(eq(plugin), any(Runnable.class), eq(1L), eq(ShopEstate.HOUR_TICKS));
         } finally {
             ShopMain.plugin = previous;
         }
