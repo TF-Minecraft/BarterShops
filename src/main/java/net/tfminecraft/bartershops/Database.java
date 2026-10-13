@@ -3,11 +3,18 @@ package net.tfminecraft.bartershops;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -20,6 +27,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
 
+import net.tfminecraft.tlibs.character.CharacterRef;
+
 public class Database {
 	static final Gson SHOP_READER = new GsonBuilder()
         .setObjectToNumberStrategy(ToNumberPolicy.BIG_DECIMAL).create();
@@ -27,6 +36,9 @@ public class Database {
 	static final String OWNER = "owner";
 	static final String OWNER_CHARACTER = "owner character";
 	private final File dataFolder;
+	Logger logger = Logger.getLogger("BarterShops");
+	// Unreadable shop files already reported, so the hourly estate pass warns once per file.
+	private final Set<String> unreadable = new HashSet<>();
 
 	public Database() {
 		this(new File("plugins/BarterShops/Data"));
@@ -79,6 +91,72 @@ public class Database {
         } catch (IllegalArgumentException ex) {
             return null;
         }
+    }
+
+    /** One shop file's owner and sign, as estates need them. */
+    public record ShopRecord(String shopId, String ownerCharacter, String type, String world, double x, double y, double z) {
+        String label() {
+            return (type == null || type.isEmpty() ? "Shop" : type.substring(0, 1).toUpperCase() + type.substring(1) + " shop")
+                + " at " + world + " " + (int) Math.floor(x) + ", " + (int) Math.floor(y) + ", " + (int) Math.floor(z);
+        }
+    }
+
+    /** Every readable shop file. Unreadable files are skipped, as the sign lookups skip them. */
+    public List<ShopRecord> shops() {
+        List<ShopRecord> shops = new ArrayList<>();
+        for (File file : shopFiles()) {
+            try {
+                Map<?, ?> shopJson = read(file);
+                shops.add(new ShopRecord(shopId(file), readCharacter(shopJson.get(OWNER_CHARACTER)),
+                    shopJson.get("type") instanceof String type ? type : null, String.valueOf(shopJson.get("sign world")),
+                    number(shopJson.get("sign xPos")), number(shopJson.get("sign yPos")), number(shopJson.get("sign zPos"))));
+            } catch (IOException ex) {
+                if (unreadable.add(file.getName()))
+                    logger.warning("Skipping unreadable shop file " + file.getName() + ": " + ex.getMessage());
+            }
+        }
+        return shops;
+    }
+
+    /** The owning character of one shop; empty when the shop is gone or has no character. */
+    public Optional<String> ownerCharacter(String shopId) throws IOException {
+        File file = shopFile(shopId);
+        if (!file.isFile()) return Optional.empty();
+        return Optional.ofNullable(readCharacter(read(file).get(OWNER_CHARACTER)));
+    }
+
+    /**
+     * Gives one shop to another character, rewriting its file in place and keeping every other value.
+     * False when the shop is gone.
+     */
+    public boolean setOwner(String shopId, CharacterRef owner) throws IOException {
+        File file = shopFile(shopId);
+        if (!file.isFile()) return false;
+        Map<String, Object> shopJson = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        read(file).forEach((key, value) -> shopJson.put(String.valueOf(key), value));
+        shopJson.put(OWNER, owner.ownerId().toString());
+        shopJson.put(OWNER_CHARACTER, owner.characterId().toString());
+        DurableFiles.write(file.toPath(), new GsonBuilder().setPrettyPrinting().create().toJson(shopJson));
+        return true;
+    }
+
+    // Shop IDs are file names, so only a UUID may name one.
+    private File shopFile(String shopId) {
+        return new File(dataFolder, UUID.fromString(shopId) + ".json");
+    }
+
+    private static Map<?, ?> read(File file) throws IOException {
+        try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8")) {
+            Map<?, ?> shopJson = SHOP_READER.fromJson(reader, Map.class);
+            if (shopJson == null) throw new IOException("Empty shop file " + file);
+            return shopJson;
+        } catch (RuntimeException ex) {
+            throw new IOException("Unreadable shop file " + file, ex);
+        }
+    }
+
+    private static double number(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0;
     }
 
     // The data folder only exists once a shop has been saved.

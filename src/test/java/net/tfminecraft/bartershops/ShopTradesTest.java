@@ -172,4 +172,38 @@ class ShopTradesTest {
             denars.verify(() -> Denars.status(anyString()), times(1));
         }
     }
+    @Test
+    void inspectionPrefersThisProcessesStateAndReadsEarlierRecords() throws Exception {
+        ShopTrades trades = new ShopTrades(directory, logger);
+        assertFalse(trades.hasIntent(shopId));
+        assertEquals(Optional.empty(), trades.inspect(shopId));
+        try (var denars = mockStatic(Denars.class)) {
+            denars.when(() -> Denars.status(anyString())).thenReturn(Optional.of(Result.APPLIED));
+            assertEquals(ShopTrades.Outcome.REVIEW, trades.trade(request(), () -> { throw new IllegalStateException(); }));
+        }
+        assertTrue(trades.hasIntent(shopId));
+        assertEquals("delivering", trades.inspect(shopId).orElseThrow().state());
+        ShopTrades restarted = new ShopTrades(directory, logger);
+        assertTrue(restarted.hasIntent(shopId));
+        ShopTrades.Intent read = restarted.inspect(shopId).orElseThrow();
+        assertEquals("delivering", read.state());
+        assertEquals(request(), read.request());
+        assertTrue(read.operationId().startsWith("shop:" + shopId + ":"));
+
+        restarted.clear(shopId);
+        assertFalse(Files.exists(intent()));
+        assertFalse(restarted.hasIntent(shopId));
+    }
+
+    @Test
+    void unreadableOrIncompleteRecordsCannotBeInspected() throws Exception {
+        ShopTrades trades = new ShopTrades(directory, logger);
+        Files.writeString(intent(), "{ broken");
+        assertThrows(IOException.class, () -> trades.inspect(shopId));
+        Files.writeString(intent(), "{\"state\": \"prepared\"}");
+        assertThrows(IOException.class, () -> trades.inspect(shopId));
+        Files.writeString(intent(), "");
+        assertThrows(IOException.class, () -> trades.inspect(shopId));
+        assertTrue(trades.hasIntent(shopId));
+    }
 }

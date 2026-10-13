@@ -6,11 +6,13 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
 import net.tfminecraft.denareconomy.api.Denars;
 import net.tfminecraft.denareconomy.api.Leg;
 import net.tfminecraft.denareconomy.api.Result;
@@ -21,7 +23,7 @@ final class ShopTrades {
     enum Outcome { APPLIED, REFUSED, WAITING, REVIEW }
     record Request(String shopId, CharacterRef customer, CharacterRef owner, String direction,
                    int quantity, long cents, String item) {}
-    private record Intent(String operationId, Request request, String state) {}
+    record Intent(String operationId, Request request, String state) {}
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
     private final Path directory;
     private final Logger logger;
@@ -30,6 +32,37 @@ final class ShopTrades {
     ShopTrades(Path directory, Logger logger) {
         this.directory = directory;
         this.logger = logger;
+    }
+
+    /** Whether a trade at this shop is unfinished, in this process or from an earlier one. */
+    boolean hasIntent(String shopId) {
+        return active.containsKey(shopId) || Files.exists(intentFile(shopId));
+    }
+
+    /** The unfinished trade at this shop, as this process last left it. Unreadable records throw. */
+    Optional<Intent> inspect(String shopId) throws IOException {
+        Intent intent = active.get(shopId);
+        if (intent != null) return Optional.of(intent);
+        Path file = intentFile(shopId);
+        if (!Files.exists(file)) return Optional.empty();
+        try {
+            intent = JSON.fromJson(Files.readString(file), Intent.class);
+        } catch (JsonParseException ex) {
+            throw new IOException("Unreadable trade record " + file, ex);
+        }
+        if (intent == null || intent.operationId() == null || intent.state() == null || intent.request() == null)
+            throw new IOException("Incomplete trade record " + file);
+        return Optional.of(intent);
+    }
+
+    /** Removes the record and this process's copy, so the shop trades again. Staff only. */
+    void clear(String shopId) throws IOException {
+        DurableFiles.delete(intentFile(shopId));
+        active.remove(shopId);
+    }
+
+    private Path intentFile(String shopId) {
+        return directory.resolve(UUID.fromString(shopId) + ".json");
     }
 
     Outcome trade(Request request, Runnable deliver) {

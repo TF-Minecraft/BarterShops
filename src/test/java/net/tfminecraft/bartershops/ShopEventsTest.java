@@ -69,8 +69,10 @@ import io.papermc.paper.registry.RegistryAccess;
 import net.tfminecraft.bartershops.sf.ShopEmbargo;
 import net.tfminecraft.denareconomy.api.Denars;
 import net.tfminecraft.denareconomy.api.Result;
+import net.tfminecraft.tlibs.character.CharacterInfo;
 import net.tfminecraft.tlibs.character.CharacterRef;
 import net.tfminecraft.tlibs.character.CharacterSession;
+import net.tfminecraft.tlibs.character.CharacterStatus;
 import net.tfminecraft.tlibs.character.Characters;
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -322,6 +324,7 @@ class ShopEventsTest {
         characters.when(Characters::available).thenReturn(true);
         characters.when(Characters::legacyHeirsReady).thenReturn(true);
         characters.when(() -> Characters.currentSession(any(Player.class))).thenReturn(Optional.of(new CharacterSession(CUSTOMER_REF, 1)));
+        ownerStatus(CharacterStatus.ALIVE);
         denar = mockStatic(Denars.class);
         denar.when(() -> Denars.pouch(any())).thenAnswer(call -> "char:" + call.<CharacterRef>getArgument(0).characterId() + ":pouch");
         denar.when(() -> Denars.bank(any())).thenAnswer(call -> "char:" + call.<CharacterRef>getArgument(0).characterId() + ":bank");
@@ -1276,6 +1279,51 @@ class ShopEventsTest {
         fire(event);
         assertTrue(event.isCancelled());
         verify(events.db, never()).deleteFile(any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"buy,DEAD", "sell,DEAD", "buy,MISSING", "sell,MISSING"})
+    void deadOwnersShopIsPausedInBothDirections(String type, CharacterStatus status) {
+        ShopSign shop = tradingShop(type);
+        ownerStatus(status);
+
+        events.useShop(click(block));
+
+        assertRefused("§cThis shop's owner has died.");
+        denar.verifyNoInteractions();
+        embargo.verify(() -> ShopEmbargo.blocked(any(), any()), never());
+        verify(shop.getStorageLoc(), never()).getBlock();
+    }
+
+    @Test
+    void shopWhoseOwnerCannotBeReadStaysClosed() {
+        tradingShop("buy");
+        characters.when(() -> Characters.info(OWNER_CHARACTER)).thenReturn(Optional.empty());
+
+        events.useShop(click(block));
+
+        assertRefused("§cThis shop is closed until its owner and your active character are available.");
+        denar.verifyNoInteractions();
+    }
+
+    @Test
+    void revivedOwnersShopTradesAgain() {
+        Inventory storage = storage(tradingShop("buy"));
+        stock(storage, new Stack(Material.DIRT, 8));
+        received(inventory);
+        ownerStatus(CharacterStatus.DEAD);
+        events.useShop(click(block));
+        denar.verifyNoInteractions();
+
+        ownerStatus(CharacterStatus.ALIVE);
+        events.useShop(click(block));
+
+        verifyTrade("buy");
+    }
+
+    private void ownerStatus(CharacterStatus status) {
+        characters.when(() -> Characters.info(any(UUID.class))).thenAnswer(call -> Optional.of(new CharacterInfo(
+                new CharacterRef(OWNER, call.getArgument(0)), "Owner", status, null, Set.of(), 0, null)));
     }
 
     @Test
