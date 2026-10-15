@@ -3,6 +3,7 @@ package net.tfminecraft.bartershops;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -135,9 +136,22 @@ final class IntentCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission(ShopEvents.ADMIN_PERMISSION)) return List.of();
-        if (args.length == 1) return List.of("intent");
-        if (args.length == 3) return List.of("clear");
-        if (args.length == 4 && args[2].equalsIgnoreCase("clear")) return List.of("--confirm");
+        if (args.length == 1) return matching(List.of("intent"), args[0]);
+        if (args.length < 2 || !args[0].equalsIgnoreCase("intent")) return List.of();
+        if (args.length == 2) return matching(trades.retainedShopIds(), args[1]);
+        try {
+            UUID.fromString(args[1]);
+        } catch (IllegalArgumentException ex) {
+            return List.of();
+        }
+        if (args.length == 3) return matching(List.of("clear"), args[2]);
+        if (args.length == 4 && args[2].equalsIgnoreCase("clear"))
+            return matching(List.of("--confirm"), args[3]);
         return List.of();
+    }
+
+    private static List<String> matching(List<String> options, String prefix) {
+        String typed = prefix.toLowerCase(Locale.ROOT);
+        return options.stream().filter(option -> option.toLowerCase(Locale.ROOT).startsWith(typed)).toList();
     }
 }
