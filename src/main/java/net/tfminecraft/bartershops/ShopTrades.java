@@ -1,9 +1,12 @@
 package net.tfminecraft.bartershops;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,10 +31,33 @@ final class ShopTrades {
     private final Path directory;
     private final Logger logger;
     private final Map<String, Intent> active = new HashMap<>();
+    private final Set<String> retained = new HashSet<>();
 
     ShopTrades(Path directory, Logger logger) {
         this.directory = directory;
         this.logger = logger;
+        if (Files.exists(directory)) {
+            try (var files = Files.list(directory)) {
+                files.filter(path -> path.getFileName().toString().endsWith(".json")).forEach(path -> {
+                    String name = path.getFileName().toString();
+                    try {
+                        String shopId = UUID.fromString(name.substring(0, name.length() - 5)).toString();
+                        if (path.equals(intentFile(shopId))) retained.add(shopId);
+                    } catch (IllegalArgumentException ignored) {
+                        // Unrelated files cannot identify a shop.
+                    }
+                });
+            } catch (IOException | UncheckedIOException ex) {
+                logger.warning("Could not index retained shop trades: " + ex);
+            }
+        }
+    }
+
+    /** Startup disk index plus trades retained by this process; no completion-time I/O. */
+    List<String> retainedShopIds() {
+        Set<String> ids = new HashSet<>(retained);
+        ids.addAll(active.keySet());
+        return ids.stream().sorted().toList();
     }
 
     /** Whether a trade at this shop is unfinished, in this process or from an earlier one. */
@@ -45,6 +71,7 @@ final class ShopTrades {
         if (intent != null) return Optional.of(intent);
         Path file = intentFile(shopId);
         if (!Files.exists(file)) return Optional.empty();
+        retained.add(shopId);
         try {
             intent = JSON.fromJson(Files.readString(file), Intent.class);
         } catch (JsonParseException ex) {
@@ -59,6 +86,7 @@ final class ShopTrades {
     void clear(String shopId) throws IOException {
         DurableFiles.delete(intentFile(shopId));
         active.remove(shopId);
+        retained.remove(shopId);
     }
 
     private Path intentFile(String shopId) {
@@ -74,7 +102,10 @@ final class ShopTrades {
         }
         Intent intent = active.get(request.shopId());
         // Files from an earlier process may describe an already delivered item. Never replay them.
-        if (intent == null && Files.exists(file)) return Outcome.REVIEW;
+        if (intent == null && Files.exists(file)) {
+            retained.add(request.shopId());
+            return Outcome.REVIEW;
+        }
         if (intent != null && (!intent.request().equals(request) || !"prepared".equals(intent.state())))
             return Outcome.REVIEW;
         try {
@@ -82,6 +113,7 @@ final class ShopTrades {
                 intent = new Intent("shop:" + request.shopId() + ":" + UUID.randomUUID(), request, "prepared");
                 DurableFiles.write(file, JSON.toJson(intent));
                 active.put(request.shopId(), intent);
+                retained.add(request.shopId());
             }
             Result result = Denars.status(intent.operationId()).orElse(null);
             if (result == null) {
@@ -97,6 +129,7 @@ final class ShopTrades {
             if (result == Result.REFUSED) {
                 DurableFiles.delete(file);
                 active.remove(request.shopId());
+                retained.remove(request.shopId());
                 return Outcome.REFUSED;
             }
             if (result == Result.UNAVAILABLE) return Outcome.WAITING;
@@ -113,8 +146,10 @@ final class ShopTrades {
             deliver.run();
             DurableFiles.delete(file);
             active.remove(request.shopId());
+            retained.remove(request.shopId());
             return Outcome.APPLIED;
         } catch (IOException | RuntimeException ex) {
+            if (Files.exists(file)) retained.add(request.shopId());
             logger.severe("Shop trade requires review; retained intent " + file + ": " + ex);
             return Outcome.REVIEW;
         }

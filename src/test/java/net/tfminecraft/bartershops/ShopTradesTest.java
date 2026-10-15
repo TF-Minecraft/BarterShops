@@ -206,4 +206,36 @@ class ShopTradesTest {
         assertThrows(IOException.class, () -> trades.inspect(shopId));
         assertTrue(trades.hasIntent(shopId));
     }
+    @Test
+    void startupIndexOffersOnlyIntentFilenamesThatInspectionResolves() throws Exception {
+        Files.writeString(intent(), new com.google.gson.Gson().toJson(
+                new ShopTrades.Intent("retained-operation", request(), "prepared")));
+        String shortened = "1-1-1-1-1";
+        String uppercase = "ABCDEFAB-ABCD-4ABC-8ABC-ABCDEFABCDEF";
+        Files.writeString(directory.resolve(shortened + ".json"), "{}");
+        Files.writeString(directory.resolve(uppercase + ".json"), "{}");
+        ShopTrades trades = new ShopTrades(directory, logger);
+        assertEquals(List.of(shopId), trades.retainedShopIds());
+        assertEquals("prepared", trades.inspect(shopId).orElseThrow().state());
+        assertTrue(trades.inspect(UUID.fromString(shortened).toString()).isEmpty());
+        assertTrue(trades.inspect(UUID.fromString(uppercase).toString()).isEmpty());
+    }
+
+    @Test
+    void traversalFailureKeepsAlreadyIndexedTradesAndLogsWithoutPreventingStartup() throws Exception {
+        Files.writeString(intent(), "{}");
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var paths = java.util.stream.Stream.concat(java.util.stream.Stream.of(intent()),
+                java.util.stream.Stream.<Path>generate(() -> {
+                    throw new java.io.UncheckedIOException(new IOException("Directory access lost"));
+                })).onClose(() -> closed.set(true));
+        try (var files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.list(directory)).thenReturn(paths);
+            ShopTrades trades = assertDoesNotThrow(() -> new ShopTrades(directory, logger));
+            assertEquals(List.of(shopId), trades.retainedShopIds());
+            verify(logger).warning(contains("Could not index retained shop trades"));
+            assertTrue(closed.get());
+        }
+    }
+
 }

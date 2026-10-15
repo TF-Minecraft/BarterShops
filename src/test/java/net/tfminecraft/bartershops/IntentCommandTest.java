@@ -239,6 +239,66 @@ class IntentCommandTest {
         assertEquals(List.of(), command.onTabComplete(staff, bukkit, "bartershops", new String[] {"intent", shopId, "x", ""}));
     }
 
+    @Test
+    void completionKeywordsRespectPrefixPathUuidAndPermission() {
+        Command bukkit = mock(Command.class);
+        assertEquals(List.of("intent"), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"In"}));
+        assertEquals(List.of("clear"), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"INTENT", shopId, "Cl"}));
+        assertEquals(List.of("--confirm"), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", shopId, "CLEAR", "--C"}));
+        for (String[] args : List.of(new String[0], new String[]{"x"}, new String[]{"wrong", shopId, ""},
+                new String[]{"intent", "not-a-uuid", ""}, new String[]{"intent", shopId, "z"},
+                new String[]{"wrong", shopId, "clear", ""}, new String[]{"intent", "bad", "clear", ""},
+                new String[]{"intent", shopId, "clear", "nope"}, new String[]{"intent", shopId, "clear", "--confirm", ""}))
+            assertEquals(List.of(), command.onTabComplete(staff, bukkit, "bartershops", args));
+        when(staff.hasPermission(ShopEvents.ADMIN_PERMISSION)).thenReturn(false);
+        assertEquals(List.of(), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", ""}));
+    }
+
+    @Test
+    void completionIndexesOnlyRetainedFilesAtStartupAndTracksClearing() throws Exception {
+        writeIntent("delivering");
+        String brokenId = UUID.randomUUID().toString();
+        Files.writeString(intentFile().resolveSibling(brokenId + ".json"), "{broken");
+        Files.writeString(intentFile().resolveSibling("not-a-shop.json"), "{}");
+        Files.writeString(intentFile().resolveSibling("notes.txt"), "{}");
+        trades = new ShopTrades(directory.resolve("trades"), Logger.getAnonymousLogger());
+        command = new IntentCommand(trades, audit(), Logger.getAnonymousLogger());
+        var bukkit = mock(Command.class);
+        assertEquals(java.util.Set.of(shopId, brokenId), new java.util.HashSet<>(
+            command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", ""})));
+        assertEquals(List.of(shopId), command.onTabComplete(staff, bukkit, "bartershops",
+            new String[]{"INTENT", shopId.substring(0, 16).toUpperCase(java.util.Locale.ROOT)}));
+        assertEquals(List.of(), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", "not"}));
+        // Moving the directory proves repeated completion reads the index, not the filesystem.
+        Path moved = directory.resolve("moved");
+        Files.move(directory.resolve("trades"), moved);
+        assertEquals(2, command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", ""}).size());
+        Files.move(moved, directory.resolve("trades"));
+        trades.clear(shopId);
+        assertEquals(List.of(brokenId), command.onTabComplete(staff, bukkit, "bartershops", new String[]{"intent", ""}));
+    }
+
+    @Test
+    void completionTracksNewWaitingAndCompletedTrades() {
+        intentInMemory(Result.UNAVAILABLE);
+        assertEquals(List.of(shopId), trades.retainedShopIds());
+        denars.when(() -> Denars.status(anyString())).thenReturn(Optional.of(Result.APPLIED));
+        assertEquals(ShopTrades.Outcome.APPLIED, trades.trade(request(), () -> {}));
+        assertTrue(trades.retainedShopIds().isEmpty());
+        intentInMemory(Result.UNAVAILABLE);
+        denars.when(() -> Denars.status(anyString())).thenReturn(Optional.of(Result.REFUSED));
+        assertEquals(ShopTrades.Outcome.REFUSED, trades.trade(request(), () -> fail("delivery")));
+        assertTrue(trades.retainedShopIds().isEmpty());
+    }
+
+    @Test
+    void unreadableIndexDirectoryLogsAndLeavesAnEmptySnapshot() throws Exception {
+        Path file = directory.resolve("not-a-directory"); Files.writeString(file, "x");
+        Logger logger = mock(Logger.class);
+        assertTrue(new ShopTrades(file, logger).retainedShopIds().isEmpty());
+        verify(logger).warning(contains("Could not index retained shop trades"));
+    }
+
     private void run(String... args) {
         assertTrue(command.onCommand(staff, mock(Command.class), "bartershops", args));
     }
