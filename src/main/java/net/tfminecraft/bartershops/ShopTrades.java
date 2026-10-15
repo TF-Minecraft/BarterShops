@@ -1,6 +1,7 @@
 package net.tfminecraft.bartershops;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -40,12 +41,13 @@ final class ShopTrades {
                 files.filter(path -> path.getFileName().toString().endsWith(".json")).forEach(path -> {
                     String name = path.getFileName().toString();
                     try {
-                        retained.add(UUID.fromString(name.substring(0, name.length() - 5)).toString());
+                        String shopId = UUID.fromString(name.substring(0, name.length() - 5)).toString();
+                        if (path.equals(intentFile(shopId))) retained.add(shopId);
                     } catch (IllegalArgumentException ignored) {
                         // Unrelated files cannot identify a shop.
                     }
                 });
-            } catch (IOException ex) {
+            } catch (IOException | UncheckedIOException ex) {
                 logger.warning("Could not index retained shop trades: " + ex);
             }
         }
